@@ -34,7 +34,7 @@ export function resolveNgrokStaticDomain(settingValue: string): string | undefin
 
 export function authtokenSource(config: vscode.WorkspaceConfiguration): string {
   if (config.get<string>("ngrok.authtoken", "").trim()) {
-    return "VS Code setting repobridge.ngrok.authtoken";
+    return "VS Code setting localbridge.ngrok.authtoken";
   }
   if (process.env.NGROK_AUTHTOKEN?.trim()) {
     return "NGROK_AUTHTOKEN environment variable";
@@ -44,7 +44,7 @@ export function authtokenSource(config: vscode.WorkspaceConfiguration): string {
 
 export function staticDomainSource(config: vscode.WorkspaceConfiguration): string {
   if (config.get<string>("ngrok.domain", "").trim()) {
-    return "VS Code setting repobridge.ngrok.domain";
+    return "VS Code setting localbridge.ngrok.domain";
   }
   if (process.env.NGROK_DOMAIN?.trim()) {
     return "NGROK_DOMAIN environment variable";

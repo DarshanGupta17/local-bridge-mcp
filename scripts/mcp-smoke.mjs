@@ -1,5 +1,5 @@
 /**
- * Local MCP smoke test (no VS Code). Starts RepoBridge MCP HTTP server against test-project.
+ * Local MCP smoke test (no VS Code). Starts LocalBridge MCP HTTP server against test-project.
  */
 import * as http from "node:http";
 import * as path from "node:path";
@@ -24,7 +24,7 @@ async function main() {
   const sessions = new Map();
 
   const createServer = () => {
-    const server = new McpServer({ name: "RepoBridge-smoke", version: "0.0.0" });
+    const server = new McpServer({ name: "LocalBridge-smoke", version: "0.0.0" });
     server.registerTool(
       "read_file",
       { inputSchema: { path: z.string() } },

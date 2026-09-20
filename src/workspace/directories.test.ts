@@ -16,7 +16,7 @@ describe("directories", () => {
   let fsApi: WorkspaceFilesystem;
 
   before(async () => {
-    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repobridge-dir-"));
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "localbridge-dir-"));
     await fs.mkdir(path.join(tmpRoot, "src", "services", "auth"), { recursive: true });
     await fs.writeFile(path.join(tmpRoot, "src", "services", "auth", "keep.ts"), "x", "utf8");
     fsApi = await WorkspaceFilesystem.create(tmpRoot);

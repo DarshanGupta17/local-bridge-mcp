@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { normalizeRelativePath } from "./security.js";
+import { normalizeRelativePath } from "../security/sensitivePathDetector.js";
+import { contentSha256 } from "../filesystem/contentHash.js";
 
 export class WorkspacePathError extends Error {
   constructor(message: string) {
@@ -135,20 +136,32 @@ export class WorkspaceFilesystem {
     }
   }
 
-  async writeFileAtomic(relativePath: string, content: string, expectedPrevious?: string): Promise<void> {
+  async writeFileAtomic(
+    relativePath: string,
+    content: string,
+    conflictGuard?: { expectedPrevious?: string; expectedContentHash?: string }
+  ): Promise<void> {
     await this.resolveRelativePath(relativePath);
 
-    if (expectedPrevious !== undefined) {
+    if (conflictGuard?.expectedContentHash !== undefined) {
       const current = await this.readFileIfExists(relativePath);
-      if (current !== expectedPrevious) {
+      const currentHash = current === undefined ? undefined : contentSha256(current);
+      if (currentHash !== conflictGuard.expectedContentHash) {
         throw new WorkspacePathError(
-          "File changed while approval was pending. Write rejected to avoid overwriting your edits."
+          "File changed while the operation was awaiting approval. The requested change was not applied."
+        );
+      }
+    } else if (conflictGuard?.expectedPrevious !== undefined) {
+      const current = await this.readFileIfExists(relativePath);
+      if (current !== conflictGuard.expectedPrevious) {
+        throw new WorkspacePathError(
+          "File changed while the operation was awaiting approval. The requested change was not applied."
         );
       }
     }
 
     const abs = this.absolutePathForRelative(relativePath);
-    const tmpPath = `${abs}.repobridge.${process.pid}.tmp`;
+    const tmpPath = `${abs}.localbridge.${process.pid}.tmp`;
     try {
       await fs.writeFile(tmpPath, content, "utf8");
       await fs.rename(tmpPath, abs);
@@ -197,7 +210,7 @@ export class WorkspaceFilesystem {
       throw err;
     }
 
-    const tmpPath = `${abs}.repobridge.${process.pid}.tmp`;
+    const tmpPath = `${abs}.localbridge.${process.pid}.tmp`;
     try {
       await fs.writeFile(tmpPath, content, { encoding: "utf8", flag: "wx" });
       await fs.rename(tmpPath, abs);

@@ -21,8 +21,8 @@ export class ConnectorPanel {
     }
 
     this.panel = vscode.window.createWebviewPanel(
-      "repobridgeConnector",
-      "RepoBridge",
+      "localbridgeConnector",
+      "LocalBridge",
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true }
     );
@@ -34,16 +34,16 @@ export class ConnectorPanel {
     this.panel.webview.onDidReceiveMessage((message: { command: string }) => {
       switch (message.command) {
         case "copy":
-          void vscode.commands.executeCommand("repobridge.copyConnectorUrl");
+          void vscode.commands.executeCommand("localbridge.copyConnectorUrl");
           break;
         case "restart":
-          void vscode.commands.executeCommand("repobridge.restart");
+          void vscode.commands.executeCommand("localbridge.restart");
           break;
         case "stop":
-          void vscode.commands.executeCommand("repobridge.stop");
+          void vscode.commands.executeCommand("localbridge.stop");
           break;
         case "open":
-          void vscode.commands.executeCommand("repobridge.openLocalConnector");
+          void vscode.commands.executeCommand("localbridge.openLocalConnector");
           break;
       }
     });
@@ -89,7 +89,7 @@ export class ConnectorPanel {
   </style>
 </head>
 <body>
-  <h1>RepoBridge</h1>
+  <h1>LocalBridge</h1>
   ${err}
   ${warn}
   <div class="label">Workspace</div>

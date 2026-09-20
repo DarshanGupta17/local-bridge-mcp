@@ -2,8 +2,7 @@ import * as http from "node:http";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { WorkspaceFilesystem } from "../workspace/filesystem.js";
-import { workspaceFolderName } from "../workspace/filesystem.js";
+import type { AppServices } from "../core/appServices.js";
 import { registerMcpTools, type ToolHandlersContext } from "./tools.js";
 import { readJsonBody, setCorsHeaders } from "./transport.js";
 import type { Logger } from "../logger.js";
@@ -13,6 +12,10 @@ import {
   getMcpClientDisplayLabel,
   getMcpClientInfoName,
 } from "./clientInfo.js";
+import {
+  AuthenticationManager,
+  extractAuthToken,
+} from "../auth/authenticationManager.js";
 
 interface SessionEntry {
   server: McpServer;
@@ -25,23 +28,34 @@ export interface McpHttpServerHandle {
   stop(): Promise<void>;
 }
 
-export async function startMcpHttpServer(
-  fsApi: WorkspaceFilesystem,
-  log: Logger,
-  preferredPort: number
-): Promise<McpHttpServerHandle> {
+export interface McpServerOptions {
+  services: AppServices;
+  log: Logger;
+  preferredPort: number;
+  auth: AuthenticationManager;
+  /** When false, MCP HTTP accepts requests without a token (local/trusted clients only). */
+  requireAuth: boolean;
+}
+
+export async function startMcpHttpServer(options: McpServerOptions): Promise<McpHttpServerHandle> {
+  const { services, log, preferredPort, auth, requireAuth } = options;
+  if (!requireAuth) {
+    log.info("MCP authentication is DISABLED (localbridge.mcp.requireAuth = false).");
+  }
   const sessions = new Map<string, SessionEntry>();
+  const workspace = services.workspace;
 
   const createMcpServer = (): {
     server: McpServer;
     setClientName: (name: string | undefined) => void;
   } => {
     const server = new McpServer({
-      name: "RepoBridge",
+      name: "LocalBridge",
       version: "0.1.0",
       description:
-        "RepoBridge exposes the user's local VS Code workspace. Paths are workspace-relative. " +
-        "Sensitive reads and destructive operations require explicit user approval in VS Code.",
+        "LocalBridge exposes the user's local VS Code workspace. Paths are workspace-relative. " +
+        "Sensitive reads and destructive operations require explicit user approval in VS Code. " +
+        "Project context is shared across AI agents.",
     });
 
     let sessionClientName: string | undefined;
@@ -51,9 +65,12 @@ export async function startMcpHttpServer(
     );
 
     const ctx: ToolHandlersContext = {
-      fs: fsApi,
+      services,
+      workspace,
       log,
       permissions,
+      getClientLabel: () =>
+        getMcpClientDisplayLabel(server, sessionClientName ?? getMcpClientInfoName(server)),
       onToolCall: (name) => log.info(`MCP tool invoked: ${name}`),
     };
     registerMcpTools(server, ctx);
@@ -118,6 +135,20 @@ export async function startMcpHttpServer(
     }
 
     try {
+      if (requireAuth) {
+        const token = extractAuthToken(
+          req.headers as Record<string, string | string[] | undefined>,
+          url
+        );
+        const valid = await auth.validateToken(token);
+        if (!valid) {
+          log.info("MCP authentication failed");
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "AUTHENTICATION_FAILED", message: "Authentication required." }));
+          return;
+        }
+      }
+
       let body: unknown;
       if (req.method === "POST") {
         body = await readJsonBody(req);
@@ -132,13 +163,20 @@ export async function startMcpHttpServer(
 
       if (req.method === "POST") {
         if (isInitialize) {
+          log.info("MCP authentication succeeded");
           const transport = await startSession(body);
           await transport.handleRequest(req, res, body);
           return;
         }
 
         if (!sessionId || !sessions.has(sessionId)) {
-          sendJsonRpcError(res, sessionId ? 404 : 400, sessionId ? -32004 : -32003, sessionId ? "Session not found" : "No session ID provided", body);
+          sendJsonRpcError(
+            res,
+            sessionId ? 404 : 400,
+            sessionId ? -32004 : -32003,
+            sessionId ? "Session not found" : "No session ID provided",
+            body
+          );
           return;
         }
 
@@ -185,7 +223,7 @@ export async function startMcpHttpServer(
 
   const port = await listen(server, preferredPort);
   log.info("MCP server started");
-  log.info(`Workspace: ${workspaceFolderName(fsApi.root)}`);
+  log.info(`Workspace roots: ${workspace.roots.map((r) => r.name).join(", ")}`);
   log.info(`Port: ${port}`);
 
   return {

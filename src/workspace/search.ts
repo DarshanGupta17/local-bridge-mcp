@@ -24,13 +24,14 @@ export async function searchInWorkspace(
   fsApi: WorkspaceFilesystem,
   query: string,
   scopePath?: string,
-  options?: { allowSensitiveTargets?: boolean }
+  options?: { allowSensitiveTargets?: boolean; maxFileBytes?: number }
 ): Promise<SearchMatch[]> {
   if (!query.trim()) {
     return [];
   }
 
   const allowSensitive = options?.allowSensitiveTargets ?? false;
+  const maxFileBytes = options?.maxFileBytes ?? 2 * 1024 * 1024;
   const root = fsApi.root;
   const matches: SearchMatch[] = [];
   const maxMatches = 500;
@@ -44,17 +45,17 @@ export async function searchInWorkspace(
       if (isSensitivePath(displayScope) && !allowSensitive) {
         throw new Error("Sensitive file search requires user approval before reading.");
       }
-      await searchFile(abs, root, query, matches, maxMatches, allowSensitive);
+      await searchFile(abs, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
       return matches;
     }
 
     if (stat.isDirectory()) {
-      await walk(abs, root, query, matches, maxMatches, allowSensitive);
+      await walk(abs, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
       return matches;
     }
   }
 
-  await walk(root, root, query, matches, maxMatches, allowSensitive);
+  await walk(root, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
   return matches;
 }
 
@@ -64,7 +65,8 @@ async function walk(
   query: string,
   matches: SearchMatch[],
   maxMatches: number,
-  allowSensitiveTargets: boolean
+  allowSensitiveTargets: boolean,
+  maxFileBytes: number
 ): Promise<void> {
   if (matches.length >= maxMatches) {
     return;
@@ -87,7 +89,7 @@ async function walk(
       if (DEFAULT_IGNORE_DIRS.has(entry.name)) {
         continue;
       }
-      await walk(full, workspaceRoot, query, matches, maxMatches, allowSensitiveTargets);
+      await walk(full, workspaceRoot, query, matches, maxMatches, allowSensitiveTargets, maxFileBytes);
       continue;
     }
 
@@ -95,7 +97,7 @@ async function walk(
       continue;
     }
 
-    await searchFile(full, workspaceRoot, query, matches, maxMatches, allowSensitiveTargets);
+    await searchFile(full, workspaceRoot, query, matches, maxMatches, allowSensitiveTargets, maxFileBytes);
   }
 }
 
@@ -105,7 +107,8 @@ async function searchFile(
   query: string,
   matches: SearchMatch[],
   maxMatches: number,
-  allowSensitiveTargets: boolean
+  allowSensitiveTargets: boolean,
+  maxFileBytes: number
 ): Promise<void> {
   const relativeFile = path.relative(workspaceRoot, filePath).replace(/\\/g, "/");
   if (isSensitivePath(relativeFile) && !allowSensitiveTargets) {
@@ -114,6 +117,10 @@ async function searchFile(
 
   let handle: import("node:fs/promises").FileHandle | undefined;
   try {
+    const stat = await fs.stat(filePath);
+    if (stat.size > maxFileBytes) {
+      return;
+    }
     handle = await fs.open(filePath, "r");
     const stream = handle.createReadStream({ encoding: "utf8" });
     let buffer = "";

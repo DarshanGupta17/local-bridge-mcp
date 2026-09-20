@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { isSensitivePath } from "../workspace/security.js";
+import { isSensitivePath } from "./sensitivePathDetector.js";
 import type { DirectoryDeletePreview } from "../workspace/directories.js";
 import { isLargeDirectoryTree } from "../workspace/directories.js";
 import type { Logger } from "../logger.js";
@@ -21,7 +21,7 @@ export class PermissionManager {
       const client = this.clientLabel();
       const choice = await vscode.window.showWarningMessage(
         [
-          "RepoBridge — Sensitive File Access",
+          "LocalBridge — Sensitive File Access",
           "",
           `${client} is requesting access to:`,
           "",
@@ -56,7 +56,7 @@ export class PermissionManager {
       if (sensitive) {
         const choice = await vscode.window.showWarningMessage(
           [
-            "RepoBridge — HIGH RISK FILE MODIFICATION",
+            "LocalBridge — HIGH RISK FILE MODIFICATION",
             "",
             `${client} wants to modify:`,
             "",
@@ -84,7 +84,7 @@ export class PermissionManager {
 
       const choice = await vscode.window.showWarningMessage(
         [
-          "RepoBridge — File Modification",
+          "LocalBridge — File Modification",
           "",
           `${client} wants to modify:`,
           "",
@@ -124,6 +124,95 @@ export class PermissionManager {
     });
   }
 
+  requestCreatePermission(relativePath: string): Promise<PermissionDecision> {
+    return this.runExclusively(async () => {
+      this.log.info(`Permission requested: operation=create_file path=${relativePath}`);
+      const client = this.clientLabel();
+      const sensitive = isSensitivePath(relativePath);
+      const lines = sensitive
+        ? [
+            "LocalBridge — HIGH RISK CREATE FILE",
+            "",
+            `${client} wants to create:`,
+            "",
+            relativePath,
+            "",
+            "This path may hold secrets or credentials.",
+            "",
+            "The file has NOT been created yet.",
+          ]
+        : [
+            "LocalBridge — Create File",
+            "",
+            `${client} wants to create:`,
+            "",
+            relativePath,
+            "",
+            "The file has NOT been created yet.",
+          ];
+      const choice = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, "Allow", "Deny");
+      const decision = choice === "Allow" ? "allow" : "deny";
+      this.logPermissionResult("create_file", relativePath, decision === "allow" ? "granted" : "denied");
+      return decision;
+    });
+  }
+
+  requestCreateDirectoryPermission(relativePath: string): Promise<PermissionDecision> {
+    return this.runExclusively(async () => {
+      this.log.info(`Permission requested: operation=create_directory path=${relativePath}`);
+      const client = this.clientLabel();
+      const sensitive = isSensitivePath(relativePath);
+      const lines = sensitive
+        ? [
+            "LocalBridge — HIGH RISK CREATE DIRECTORY",
+            "",
+            `${client} wants to create directory:`,
+            "",
+            relativePath,
+            "",
+            "The directory has NOT been created yet.",
+          ]
+        : [
+            "LocalBridge — Create Directory",
+            "",
+            `${client} wants to create directory:`,
+            "",
+            relativePath,
+            "",
+            "The directory has NOT been created yet.",
+          ];
+      const choice = await vscode.window.showWarningMessage(lines.join("\n"), { modal: true }, "Allow", "Deny");
+      const decision = choice === "Allow" ? "allow" : "deny";
+      this.logPermissionResult("create_directory", relativePath, decision === "allow" ? "granted" : "denied");
+      return decision;
+    });
+  }
+
+  requestSensitiveSearchPermission(relativePath: string): Promise<ReadPermissionDecision> {
+    return this.runExclusively(async () => {
+      this.log.info(`Permission requested: operation=search_file path=${relativePath}`);
+      const client = this.clientLabel();
+      const choice = await vscode.window.showWarningMessage(
+        [
+          "LocalBridge — Sensitive Search",
+          "",
+          `${client} is requesting to search a sensitive path:`,
+          "",
+          relativePath,
+          "",
+          "Allow Once",
+          "Deny",
+        ].join("\n"),
+        { modal: true },
+        "Allow Once",
+        "Deny"
+      );
+      const decision = choice === "Allow Once" ? "allow-once" : "deny";
+      this.logPermissionResult("search_file", relativePath, decision === "allow-once" ? "granted" : "denied");
+      return decision;
+    });
+  }
+
   requestDeletePermission(relativePath: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=delete_file path=${relativePath}`);
@@ -132,7 +221,7 @@ export class PermissionManager {
 
       const lines = sensitive
         ? [
-            "RepoBridge — HIGH RISK DELETE FILE",
+            "LocalBridge — HIGH RISK DELETE FILE",
             "",
             `${client} wants to permanently delete:`,
             "",
@@ -145,7 +234,7 @@ export class PermissionManager {
             "The file has NOT been deleted yet.",
           ]
         : [
-            "RepoBridge — DELETE FILE",
+            "LocalBridge — DELETE FILE",
             "",
             `${client} wants to permanently delete:`,
             "",
@@ -197,7 +286,7 @@ export function registerDiffContentProvider(context: vscode.ExtensionContext): v
     },
   };
   context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider("repobridge-diff", provider)
+    vscode.workspace.registerTextDocumentContentProvider("localbridge-diff", provider)
   );
 }
 
@@ -206,8 +295,8 @@ async function showWriteDiffPreview(
   currentContent: string,
   newContent: string
 ): Promise<void> {
-  const originalUri = vscode.Uri.parse(`repobridge-diff:original/${encodeURIComponent(relativePath)}`);
-  const modifiedUri = vscode.Uri.parse(`repobridge-diff:modified/${encodeURIComponent(relativePath)}`);
+  const originalUri = vscode.Uri.parse(`localbridge-diff:original/${encodeURIComponent(relativePath)}`);
+  const modifiedUri = vscode.Uri.parse(`localbridge-diff:modified/${encodeURIComponent(relativePath)}`);
 
   diffContent.set(originalUri.toString(), currentContent);
   diffContent.set(modifiedUri.toString(), newContent);
@@ -217,7 +306,7 @@ async function showWriteDiffPreview(
       "vscode.diff",
       originalUri,
       modifiedUri,
-      `RepoBridge: ${relativePath}`
+      `LocalBridge: ${relativePath}`
     );
   } catch {
     // Best-effort diff editor
@@ -269,8 +358,8 @@ export function formatChangePreview(before: string, after: string): string {
 
 function formatDeleteDirectoryBody(preview: DirectoryDeletePreview, clientLabel: string): string {
   const header = preview.isEmpty
-    ? "RepoBridge — Delete Folder"
-    : "RepoBridge — HIGH RISK: DELETE FOLDER";
+    ? "LocalBridge — Delete Folder"
+    : "LocalBridge — HIGH RISK: DELETE FOLDER";
 
   if (preview.isEmpty) {
     return [
@@ -303,7 +392,7 @@ function formatDeleteDirectoryBody(preview: DirectoryDeletePreview, clientLabel:
       "",
       "Deleting this folder will remove all of its contents.",
       "",
-      "This operation cannot be undone by RepoBridge.",
+      "This operation cannot be undone by LocalBridge.",
       "",
       "The folder has NOT been deleted yet.",
     ].join("\n");
@@ -332,7 +421,7 @@ function formatDeleteDirectoryBody(preview: DirectoryDeletePreview, clientLabel:
     "",
     "Deleting this folder will remove all of its contents.",
     "",
-    "This operation cannot be undone by RepoBridge.",
+    "This operation cannot be undone by LocalBridge.",
     "",
     "The folder has NOT been deleted yet.",
   ].join("\n");

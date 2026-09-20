@@ -41,7 +41,7 @@ export function setCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Accept, Mcp-Session-Id, mcp-session-id"
+    "Content-Type, Accept, Mcp-Session-Id, mcp-session-id, Authorization, X-LocalBridge-Token, X-Localbridge-Token, X-Repobridge-Token"
   );
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, mcp-session-id");
 }

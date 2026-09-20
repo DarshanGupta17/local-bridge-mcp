@@ -10,7 +10,7 @@ describe("WorkspaceFilesystem", () => {
   let fsApi: WorkspaceFilesystem;
 
   before(async () => {
-    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repobridge-test-"));
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "localbridge-test-"));
     await fs.writeFile(path.join(tmpRoot, "hello.js"), 'return "Hello";', "utf8");
     await fs.mkdir(path.join(tmpRoot, "src"), { recursive: true });
     fsApi = await WorkspaceFilesystem.create(tmpRoot);
@@ -40,8 +40,8 @@ describe("WorkspaceFilesystem", () => {
     const snapshot = await fsApi.readFile("hello.js");
     await fs.writeFile(path.join(tmpRoot, "hello.js"), "changed", "utf8");
     await assert.rejects(
-      () => fsApi.writeFileAtomic("hello.js", "new", snapshot),
-      /File changed while approval was pending/
+      () => fsApi.writeFileAtomic("hello.js", "new", { expectedPrevious: snapshot }),
+      /File changed while the operation was awaiting approval/
     );
   });
 

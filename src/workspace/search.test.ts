@@ -11,7 +11,7 @@ describe("searchInWorkspace", () => {
   let fsApi: WorkspaceFilesystem;
 
   before(async () => {
-    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "repobridge-search-"));
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "localbridge-search-"));
     await fs.mkdir(path.join(tmpRoot, "src"), { recursive: true });
     await fs.writeFile(path.join(tmpRoot, "src", "auth.js"), "function authenticate() {}", "utf8");
     await fs.writeFile(path.join(tmpRoot, ".env"), "DATABASE_URL=secret", "utf8");

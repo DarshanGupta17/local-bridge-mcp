@@ -1,9 +1,9 @@
 {
-  "name": "repobridge",
-  "displayName": "RepoBridge",
-  "description": "Expose your VS Code workspace as a remote MCP server via ngrok",
+  "name": "localbridge",
+  "displayName": "LocalBridge",
+  "description": "LocalBridge exposes your VS Code workspace as a remote MCP server via ngrok",
   "version": "0.1.0",
-  "publisher": "repobridge",
+  "publisher": "localbridge",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -17,59 +17,118 @@
   "contributes": {
     "commands": [
       {
-        "command": "repobridge.start",
-        "title": "RepoBridge: Start"
+        "command": "localbridge.start",
+        "title": "LocalBridge: Start"
       },
       {
-        "command": "repobridge.stop",
-        "title": "RepoBridge: Stop"
+        "command": "localbridge.stop",
+        "title": "LocalBridge: Stop"
       },
       {
-        "command": "repobridge.restart",
-        "title": "RepoBridge: Restart"
+        "command": "localbridge.restart",
+        "title": "LocalBridge: Restart"
       },
       {
-        "command": "repobridge.copyConnectorUrl",
-        "title": "RepoBridge: Copy Connector URL"
+        "command": "localbridge.copyConnectorUrl",
+        "title": "LocalBridge: Copy Connector URL"
       },
       {
-        "command": "repobridge.showConnector",
-        "title": "RepoBridge: Show Connector"
+        "command": "localbridge.copyAuthenticatedConnectorUrl",
+        "title": "LocalBridge: Copy Connector URL (with token, for Claude)"
       },
       {
-        "command": "repobridge.openLocalConnector",
-        "title": "RepoBridge: Open Connector in Browser"
+        "command": "localbridge.showConnector",
+        "title": "LocalBridge: Show Connector"
+      },
+      {
+        "command": "localbridge.openLocalConnector",
+        "title": "LocalBridge: Open Connector in Browser"
+      },
+      {
+        "command": "localbridge.copyAuthToken",
+        "title": "LocalBridge: Copy MCP Authentication Token"
+      },
+      {
+        "command": "localbridge.regenerateAuthToken",
+        "title": "LocalBridge: Regenerate Authentication Token"
+      },
+      {
+        "command": "localbridge.configureNgrok",
+        "title": "LocalBridge: Configure ngrok"
+      },
+      {
+        "command": "localbridge.viewAuditLog",
+        "title": "LocalBridge: View Audit Log"
+      },
+      {
+        "command": "localbridge.clearAuditLog",
+        "title": "LocalBridge: Clear Audit Log"
       }
     ],
     "configuration": {
-      "title": "RepoBridge",
+      "title": "LocalBridge",
       "properties": {
-        "repobridge.autoStart": {
+        "localbridge.autoStart": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically start RepoBridge when a workspace folder is opened."
+          "description": "Automatically start localbridge when a workspace folder is opened."
         },
-        "repobridge.mcp.port": {
+        "localbridge.mcp.port": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 65535,
           "description": "Local MCP HTTP port (0 = pick a free port)."
         },
-        "repobridge.ngrok.enabled": {
+        "localbridge.mcp.requireAuth": {
           "type": "boolean",
           "default": true,
-          "description": "Try to expose MCP via ngrok when an authtoken is available. If ngrok fails or no token is set, RepoBridge still starts on localhost."
+          "description": "Require localbridge MCP token on every /mcp request. Set false only if your MCP client cannot send headers or URL tokens (less secure on ngrok)."
         },
-        "repobridge.ngrok.authtoken": {
+        "localbridge.ngrok.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Try to expose MCP via ngrok when an authtoken is available. If ngrok fails or no token is set, localbridge still starts on localhost."
+        },
+        "localbridge.ngrok.authtoken": {
           "type": "string",
           "default": "",
           "description": "ngrok authtoken. Also reads NGROK_AUTHTOKEN or .vscode/.env in the extension install folder (see README for F5)."
         },
-        "repobridge.ngrok.domain": {
+        "localbridge.ngrok.domain": {
           "type": "string",
           "default": "",
           "description": "Optional reserved ngrok domain (static URL), e.g. my-app.ngrok-free.app. Also reads NGROK_DOMAIN from .vscode/.env. Falls back to a random ngrok URL if unavailable."
+        },
+        "localbridge.maxReadFileSize": {
+          "type": "number",
+          "default": 5242880,
+          "description": "Maximum file size (bytes) for read_file."
+        },
+        "localbridge.maxWriteFileSize": {
+          "type": "number",
+          "default": 5242880,
+          "description": "Maximum content size (bytes) for write_file and create_file."
+        },
+        "localbridge.maxSearchFileSize": {
+          "type": "number",
+          "default": 2097152,
+          "description": "Maximum file size (bytes) searched by search_file."
+        },
+        "localbridge.auditLogEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Record local audit metadata for MCP operations (no file contents or secrets)."
+        },
+        "localbridge.contextEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable agent-independent shared project context tools."
+        },
+        "localbridge.searchRespectGitignore": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, search_file will respect .gitignore patterns (experimental)."
         }
       }
     }
@@ -79,7 +138,7 @@
     "watch": "node esbuild.config.mjs --watch",
     "vscode:prepublish": "npm run compile",
     "test:mcp": "node scripts/mcp-smoke.mjs",
-    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts"
+    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts src/auth/authenticationManager.test.ts src/filesystem/contentHash.test.ts src/security/workspaceManager.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
