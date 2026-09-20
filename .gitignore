@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.vsix
+.DS_Store
+*.log
+.env
+test-project/.env
+.vscode/.env
+.vscode/.env.example
+drf-project
+.vscode-test/
+test-project

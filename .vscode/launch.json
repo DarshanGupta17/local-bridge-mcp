@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/drf-project"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}",
+      "envFile": "${workspaceFolder}/.vscode/.env",
+      "env": {
+        "NGROK_AUTHTOKEN": "${env:NGROK_AUTHTOKEN}"
+      }
+    }
+  ]
+}

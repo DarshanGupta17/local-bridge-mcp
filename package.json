@@ -1,0 +1,96 @@
+{
+  "name": "repobridge",
+  "displayName": "RepoBridge",
+  "description": "Expose your VS Code workspace as a remote MCP server via ngrok",
+  "version": "0.1.0",
+  "publisher": "repobridge",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "repobridge.start",
+        "title": "RepoBridge: Start"
+      },
+      {
+        "command": "repobridge.stop",
+        "title": "RepoBridge: Stop"
+      },
+      {
+        "command": "repobridge.restart",
+        "title": "RepoBridge: Restart"
+      },
+      {
+        "command": "repobridge.copyConnectorUrl",
+        "title": "RepoBridge: Copy Connector URL"
+      },
+      {
+        "command": "repobridge.showConnector",
+        "title": "RepoBridge: Show Connector"
+      },
+      {
+        "command": "repobridge.openLocalConnector",
+        "title": "RepoBridge: Open Connector in Browser"
+      }
+    ],
+    "configuration": {
+      "title": "RepoBridge",
+      "properties": {
+        "repobridge.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start RepoBridge when a workspace folder is opened."
+        },
+        "repobridge.mcp.port": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Local MCP HTTP port (0 = pick a free port)."
+        },
+        "repobridge.ngrok.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Try to expose MCP via ngrok when an authtoken is available. If ngrok fails or no token is set, RepoBridge still starts on localhost."
+        },
+        "repobridge.ngrok.authtoken": {
+          "type": "string",
+          "default": "",
+          "description": "ngrok authtoken. Also reads NGROK_AUTHTOKEN or .vscode/.env in the extension install folder (see README for F5)."
+        },
+        "repobridge.ngrok.domain": {
+          "type": "string",
+          "default": "",
+          "description": "Optional reserved ngrok domain (static URL), e.g. my-app.ngrok-free.app. Also reads NGROK_DOMAIN from .vscode/.env. Falls back to a random ngrok URL if unavailable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "vscode:prepublish": "npm run compile",
+    "test:mcp": "node scripts/mcp-smoke.mjs",
+    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@ngrok/ngrok": "^1.7.0",
+    "zod": "^3.24.0"
+  }
+}
