@@ -1,5 +1,6 @@
 import { forward, type Listener } from "@ngrok/ngrok";
 import type { Logger } from "../logger.js";
+import type { PublicTunnelHandle } from "../tunnel/types.js";
 
 export interface NgrokTunnelOptions {
   authtoken: string;
@@ -9,11 +10,9 @@ export interface NgrokTunnelOptions {
 
 export type NgrokDomainMode = "static" | "ephemeral";
 
-export interface NgrokTunnelHandle {
+export interface NgrokTunnelHandle extends PublicTunnelHandle {
   publicBaseUrl: string;
-  connectorUrl: string;
   domainMode: NgrokDomainMode;
-  stop(): Promise<void>;
 }
 
 export async function startNgrokTunnel(
@@ -81,6 +80,7 @@ async function connectNgrok(
   return {
     publicBaseUrl,
     connectorUrl,
+    provider: "ngrok",
     domainMode,
     async stop() {
       try {

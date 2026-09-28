@@ -55,7 +55,7 @@ Also accepted query names: `token`, `api_key`.
 
 Commands:
 
-- **LocalBridge: Copy Connector URL (with token, for Claude)** — full MCP URL with `access_token` (use for ChatGPT too)
+- **LocalBridge: Copy MCP Endpoint (with token, for Claude)** — full MCP URL with `access_token` (use for ChatGPT too)
 - **LocalBridge: Copy MCP Authentication Token** — token only
 - **LocalBridge: Regenerate Authentication Token**
 - **LocalBridge: Configure ngrok** (stores ngrok token in SecretStorage)
@@ -89,7 +89,7 @@ ChatGPT and Claude usually **do not** offer a separate “API key” field for c
 ### 1. Copy the authenticated connector URL
 
 1. Start LocalBridge (**LocalBridge: Start** or F5 with auto-start).
-2. Command Palette → **LocalBridge: Copy Connector URL (with token, for Claude)**.
+2. Command Palette → **LocalBridge: Copy MCP Endpoint (with token, for Claude)**.
 3. Confirm the warning. Your clipboard will contain something like:
 
 ```text
@@ -104,7 +104,7 @@ http://127.0.0.1:54321/mcp?access_token=local_xxxxxxxxxxxxxxxx
 
 The `access_token` value stays the same across restarts until you run **LocalBridge: Regenerate Authentication Token**. You configure the connector **once**, not every session.
 
-To build the URL yourself: run **LocalBridge: Copy Connector URL** and **LocalBridge: Copy MCP Authentication Token**, then append:
+To build the URL yourself: run **LocalBridge: Copy MCP Endpoint** and **LocalBridge: Copy MCP Authentication Token**, then append:
 
 ```text
 ?access_token=<paste-token-here>
@@ -248,7 +248,7 @@ The extension embeds ngrok via npm. If tunnel startup fails, you can also instal
 1. Open this repository in VS Code.
 2. Run **Developer: Run Extension** or press **F5**.
 3. A new **Extension Development Host** window opens with `test-project/` loaded (configured in `.vscode/launch.json`).
-4. LocalBridge auto-starts when a workspace is open (`localbridge.autoStart`, default `true`).
+4. Start the server from the sidebar with **Continue** (setup) or **Start** (dashboard)—connections are never started automatically when you open the activity bar.
 5. Status bar should show **LocalBridge: Connected** (if ngrok is configured).
 6. Click the status bar item or run **LocalBridge: Show Connector** to see the public URL.
 
@@ -259,8 +259,14 @@ The extension embeds ngrok via npm. If tunnel startup fails, you can also instal
 | LocalBridge: Start | `localbridge.start` |
 | LocalBridge: Stop | `localbridge.stop` |
 | LocalBridge: Restart | `localbridge.restart` |
-| LocalBridge: Copy Connector URL | `localbridge.copyConnectorUrl` |
+| LocalBridge: Open | `localbridge.open` |
+| LocalBridge: Open Settings | `localbridge.openSettings` |
+| LocalBridge: Copy MCP Endpoint | `localbridge.copyConnectorUrl` |
+| LocalBridge: Copy MCP Endpoint (with token, for Claude) | `localbridge.copyAuthenticatedConnectorUrl` |
 | LocalBridge: Show Connector | `localbridge.showConnector` |
+| LocalBridge: Reset Onboarding | `localbridge.resetOnboarding` |
+
+Uninstalling the extension runs an cleanup hook that removes LocalBridge global storage, clears `localbridge.*` user settings (including ngrok static domain), and deletes stored secrets (ngrok authtoken, MCP auth token) from Cursor/VS Code state when possible.
 
 ### Output log
 
@@ -314,7 +320,7 @@ Status bar: **LocalBridge: Connected**.
 
 Follow **[Connect ChatGPT and Claude](#connect-chatgpt-and-claude)**:
 
-- Copy **LocalBridge: Copy Connector URL (with token, for Claude)**.
+- Copy **LocalBridge: Copy MCP Endpoint (with token, for Claude)**.
 - **ChatGPT:** authentication **No auth**, URL with `?access_token=local_…`.
 - **Claude:** authentication **No sign-in**, same full URL.
 

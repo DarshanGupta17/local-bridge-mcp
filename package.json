@@ -2,8 +2,9 @@
   "name": "localbridge",
   "displayName": "LocalBridge",
   "description": "LocalBridge exposes your VS Code workspace as a remote MCP server via ngrok",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "publisher": "localbridge",
+  "icon": "public/localbridge.png",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -11,11 +12,58 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onView:localbridge.sidebar",
+    "onCommand:localbridge.open",
+    "onCommand:localbridge.start",
+    "onCommand:localbridge.focusSidebar"
   ],
   "main": "./dist/extension.js",
+  "vscode:uninstall": "node ./dist/uninstall.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "localbridge",
+          "title": "LocalBridge",
+          "icon": "public/localbridge-activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "localbridge": [
+        {
+          "type": "webview",
+          "id": "localbridge.sidebar",
+          "name": "LocalBridge",
+          "icon": "public/localbridge-activitybar.svg"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "localbridge.open",
+        "title": "LocalBridge: Open"
+      },
+      {
+        "command": "localbridge.openInEditor",
+        "title": "LocalBridge: Open in Editor Tab"
+      },
+      {
+        "command": "localbridge.focusSidebar",
+        "title": "LocalBridge: Focus Sidebar"
+      },
+      {
+        "command": "localbridge.showWelcome",
+        "title": "LocalBridge: Show Welcome Screen"
+      },
+      {
+        "command": "localbridge.resetOnboarding",
+        "title": "LocalBridge: Reset Onboarding (testing)"
+      },
+      {
+        "command": "localbridge.openSettings",
+        "title": "LocalBridge: Open Settings"
+      },
       {
         "command": "localbridge.start",
         "title": "LocalBridge: Start"
@@ -30,11 +78,11 @@
       },
       {
         "command": "localbridge.copyConnectorUrl",
-        "title": "LocalBridge: Copy Connector URL"
+        "title": "LocalBridge: Copy MCP Endpoint"
       },
       {
         "command": "localbridge.copyAuthenticatedConnectorUrl",
-        "title": "LocalBridge: Copy Connector URL (with token, for Claude)"
+        "title": "LocalBridge: Copy MCP Endpoint (with token, for Claude)"
       },
       {
         "command": "localbridge.showConnector",
@@ -65,13 +113,22 @@
         "title": "LocalBridge: Clear Audit Log"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "localbridge.openInEditor",
+          "when": "view == localbridge.sidebar",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "LocalBridge",
       "properties": {
         "localbridge.autoStart": {
           "type": "boolean",
-          "default": true,
-          "description": "Automatically start localbridge when a workspace folder is opened."
+          "default": false,
+          "description": "Deprecated: connections always start manually from Continue or Start in the sidebar. This setting is ignored."
         },
         "localbridge.mcp.port": {
           "type": "number",
@@ -87,8 +144,22 @@
         },
         "localbridge.ngrok.enabled": {
           "type": "boolean",
-          "default": true,
-          "description": "Try to expose MCP via ngrok when an authtoken is available. If ngrok fails or no token is set, localbridge still starts on localhost."
+          "default": false,
+          "description": "When enabled, expose LocalBridge via a public HTTPS tunnel (ngrok or Cloudflare quick tunnel). When disabled (recommended), LocalBridge runs on localhost only."
+        },
+        "localbridge.public.provider": {
+          "type": "string",
+          "enum": [
+            "ngrok",
+            "cloudflare"
+          ],
+          "default": "ngrok",
+          "description": "Public HTTPS tunnel provider when localbridge.ngrok.enabled is true."
+        },
+        "localbridge.cloudflared.path": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the cloudflared executable. Leave empty to use cloudflared from PATH (required for Cloudflare quick tunnels)."
         },
         "localbridge.ngrok.authtoken": {
           "type": "string",
@@ -134,22 +205,29 @@
     }
   },
   "scripts": {
+    "brand:generate": "node scripts/generate-brand-assets.mjs",
     "compile": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
     "vscode:prepublish": "npm run compile",
+    "package": "vsce package --allow-missing-repository",
     "test:mcp": "node scripts/mcp-smoke.mjs",
-    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts src/auth/authenticationManager.test.ts src/filesystem/contentHash.test.ts src/security/workspaceManager.test.ts"
+    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts src/auth/authenticationManager.test.ts src/filesystem/contentHash.test.ts src/security/workspaceManager.test.ts src/ui/friendlyError.test.ts"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.0",
     "esbuild": "^0.25.0",
+    "png-to-ico": "^2.1.8",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@ngrok/ngrok": "^1.7.0",
+    "cloudflared": "^0.7.3",
+    "sql.js": "^1.14.2",
     "zod": "^3.24.0"
   }
 }

@@ -1,12 +1,13 @@
 import * as vscode from "vscode";
 import { Logger } from "./logger.js";
-import { startMcpHttpServer, type McpHttpServerHandle } from "./mcp/server.js";
+import type { McpHttpServerHandle } from "./mcp/server.js";
 import { resolveNgrokStaticDomain, staticDomainSource } from "./ngrok/config.js";
 import { ngrokAuthtokenSource, resolveNgrokAuthtokenSecure } from "./ngrok/secrets.js";
-import { startNgrokTunnel, type NgrokTunnelHandle } from "./ngrok/tunnel.js";
+import type { NgrokTunnelHandle } from "./ngrok/tunnel.js";
+import type { PublicTunnelHandle, PublicTunnelProvider } from "./tunnel/types.js";
 import { workspaceFolderName } from "./workspace/filesystem.js";
 import { StatusBarController } from "./ui/statusBar.js";
-import { ConnectorPanel, type ConnectorPanelState } from "./ui/connectorPanel.js";
+import { ConnectorPanel, type ConnectorPanelState, type PanelViewStep } from "./ui/connectorPanel.js";
 import type { AppServices } from "./core/appServices.js";
 import { appendTokenToMcpUrl } from "./auth/authenticationManager.js";
 
@@ -23,10 +24,11 @@ export class ConnectionService {
   private readonly services: AppServices;
 
   private mcp: McpHttpServerHandle | undefined;
-  private tunnel: NgrokTunnelHandle | undefined;
+  private tunnel: PublicTunnelHandle | undefined;
   private connectorUrl: string | undefined;
   private localConnectorUrl: string | undefined;
   private connectionMode: ConnectionMode | undefined;
+  private publicProvider: PublicTunnelProvider | undefined;
   private lastError: string | undefined;
   private lastWarning: string | undefined;
   private starting = false;
@@ -65,13 +67,14 @@ export class ConnectionService {
       publicUrl: this.connectorUrl,
       localPort: this.mcp?.port,
       connectionMode: this.connectionMode,
+      publicProvider: this.publicProvider,
       warning: this.lastWarning,
       error: this.lastError,
     };
   }
 
-  showConnectorPanel(): void {
-    this.panel.show(this.context, this.getPanelState());
+  showConnectorPanel(step?: PanelViewStep): void {
+    this.panel.show(this.context, this, step);
   }
 
   async openLocalConnector(): Promise<void> {
@@ -109,23 +112,28 @@ export class ConnectionService {
       await this.services.bindWorkspace(folders);
 
       const config = vscode.workspace.getConfiguration("localbridge");
-      const ngrokEnabled = config.get<boolean>("ngrok.enabled", true);
+      const publicEnabled = config.get<boolean>("ngrok.enabled", false);
+      const publicProvider = config.get<PublicTunnelProvider>("public.provider", "ngrok");
       const authtoken = await resolveNgrokAuthtokenSecure(
         this.context,
         config.get<string>("ngrok.authtoken", "")
       );
 
       this.log.info("LocalBridge starting…");
-      if (authtoken) {
+      if (publicEnabled) {
+        this.log.info(`Public HTTPS tunnel: ${publicProvider}`);
+      }
+      if (publicProvider === "ngrok" && authtoken) {
         this.log.info(`ngrok authtoken: configured (${ngrokAuthtokenSource(this.context, config)})`);
-      } else {
-        this.log.info("ngrok authtoken: not set — will use localhost MCP URL only");
+      } else if (publicProvider === "ngrok") {
+        this.log.info("ngrok authtoken: not set");
       }
 
       const preferredPort = config.get<number>("mcp.port", 0);
 
       const requireAuth = config.get<boolean>("mcp.requireAuth", true);
 
+      const { startMcpHttpServer } = await import("./mcp/server.js");
       this.mcp = await startMcpHttpServer({
         services: this.services,
         log: this.log,
@@ -136,72 +144,96 @@ export class ConnectionService {
       this.localConnectorUrl = `http://127.0.0.1:${this.mcp.port}/mcp`;
       this.log.info(`Local MCP connector: ${this.localConnectorUrl}`);
 
-      let usedNgrok = false;
-      if (ngrokEnabled && authtoken) {
-        const staticDomain = resolveNgrokStaticDomain(config.get<string>("ngrok.domain", ""));
-        if (staticDomain) {
-          this.log.info(`Static domain: configured (${staticDomainSource(config)}) → ${staticDomain}`);
-        }
-
-        try {
-          this.tunnel = await startNgrokTunnel(
-            this.mcp.port,
-            { authtoken, staticDomain },
-            this.log
-          );
-          this.connectorUrl = this.tunnel.connectorUrl;
-          this.connectionMode = "public";
-          usedNgrok = true;
-
-          if (staticDomain && this.tunnel.domainMode === "ephemeral") {
-            this.lastWarning =
-              `Could not bind ngrok static domain "${staticDomain}". Using ephemeral URL instead.`;
-            this.log.info(this.lastWarning);
+      let usedPublicTunnel = false;
+      if (publicEnabled) {
+        if (publicProvider === "cloudflare") {
+          const cloudflaredPath = config.get<string>("cloudflared.path", "");
+          try {
+            const { startCloudflareQuickTunnel } = await import("./cloudflare/quickTunnel.js");
+            this.tunnel = await startCloudflareQuickTunnel(this.mcp.port, this.log, cloudflaredPath);
+            this.connectorUrl = this.tunnel.connectorUrl;
+            this.connectionMode = "public";
+            this.publicProvider = "cloudflare";
+            usedPublicTunnel = true;
+            this.log.info(
+              "Cloudflare quick tunnel: development/testing only (200 concurrent request limit; SSE not supported)."
+            );
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.lastWarning = `Cloudflare quick tunnel failed: ${message}. Using localhost MCP URL.`;
+            this.log.error(this.lastWarning);
           }
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.lastWarning = `ngrok failed: ${message}. Using localhost MCP URL.`;
-          this.log.error(this.lastWarning);
+        } else if (authtoken) {
+          const staticDomain = resolveNgrokStaticDomain(config.get<string>("ngrok.domain", ""));
+          if (staticDomain) {
+            this.log.info(`Static domain: configured (${staticDomainSource(config)}) → ${staticDomain}`);
+          }
+
+          try {
+            const { startNgrokTunnel } = await import("./ngrok/tunnel.js");
+            this.tunnel = await startNgrokTunnel(
+              this.mcp.port,
+              { authtoken, staticDomain },
+              this.log
+            );
+            this.connectorUrl = this.tunnel.connectorUrl;
+            this.connectionMode = "public";
+            this.publicProvider = "ngrok";
+            usedPublicTunnel = true;
+
+            const ngrokTunnel = this.tunnel as NgrokTunnelHandle;
+            if (staticDomain && ngrokTunnel.domainMode === "ephemeral") {
+              this.lastWarning =
+                `Could not bind ngrok static domain "${staticDomain}". Using ephemeral URL instead.`;
+              this.log.info(this.lastWarning);
+            }
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.lastWarning = `ngrok failed: ${message}. Using localhost MCP URL.`;
+            this.log.error(this.lastWarning);
+          }
+        } else {
+          this.lastWarning =
+            "ngrok authtoken not found. MCP is available on localhost only. " +
+            "Use LocalBridge: Configure ngrok, or choose Cloudflare quick tunnel in connection setup.";
+          this.log.info(this.lastWarning);
         }
-      } else if (ngrokEnabled && !authtoken) {
-        this.lastWarning =
-          "ngrok authtoken not found. MCP is available on localhost only. " +
-          "Use LocalBridge: Configure ngrok or set NGROK_AUTHTOKEN.";
-        this.log.info(this.lastWarning);
       }
 
-      if (!usedNgrok) {
+      if (!usedPublicTunnel) {
         this.connectorUrl = this.localConnectorUrl;
         this.connectionMode = "local";
+        this.publicProvider = undefined;
       }
 
-      this.applyConnectedUi(usedNgrok);
+      this.applyConnectedUi(usedPublicTunnel);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.lastError = message;
       this.log.error(message);
       await this.stopInternal();
       this.statusBar.setStatus("error", message);
+      this.panel.update();
       vscode.window.showErrorMessage(`LocalBridge failed to start: ${message}`);
     } finally {
       this.starting = false;
     }
   }
 
-  private applyConnectedUi(publicNgrok: boolean): void {
+  private applyConnectedUi(publicTunnel: boolean): void {
     const url = this.connectorUrl!;
-    if (publicNgrok) {
+    if (publicTunnel) {
       this.statusBar.setStatus("connected", url);
     } else {
       this.statusBar.setStatus("local", url);
     }
-    this.panel.update(this.getPanelState());
+    this.panel.update();
 
-    const headline = publicNgrok
+    const headline = publicTunnel
       ? `LocalBridge connected (public): ${url}`
       : `LocalBridge running locally: ${url}`;
 
-    const actions = publicNgrok
+    const actions = publicTunnel
       ? ["Copy URL", "Show panel", "Open local URL"]
       : ["Copy URL", "Show panel", "Open in browser", "ngrok setup"];
 
@@ -231,10 +263,11 @@ export class ConnectionService {
     this.connectorUrl = undefined;
     this.localConnectorUrl = undefined;
     this.connectionMode = undefined;
+    this.publicProvider = undefined;
     this.lastError = undefined;
     this.lastWarning = undefined;
     this.statusBar.setStatus("stopped");
-    this.panel.update(this.getPanelState());
+    this.panel.update();
     this.log.info("LocalBridge stopped by user");
   }
 
