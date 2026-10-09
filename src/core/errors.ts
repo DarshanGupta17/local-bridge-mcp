@@ -14,7 +14,10 @@ export type LocalBridgeErrorCode =
   | "FILE_TOO_LARGE"
   | "BINARY_FILE"
   | "PROTECTED_PATH"
-  | "OPERATION_NOT_SUPPORTED";
+  | "OPERATION_NOT_SUPPORTED"
+  | "COMMAND_BLOCKED"
+  | "INVALID_ARGUMENT"
+  | "PROCESS_NOT_FOUND";
 
 export class LocalBridgeError extends Error {
   constructor(

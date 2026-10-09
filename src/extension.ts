@@ -52,24 +52,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("localbridge.focusSidebar", () =>
       vscode.commands.executeCommand("workbench.view.extension.localbridge")
     ),
-    vscode.commands.registerCommand(
-      "localbridge.showWelcome",
-      withBoot(() => connectionService?.showConnectorPanel("welcome"))
-    ),
-    vscode.commands.registerCommand(
-      "localbridge.resetOnboarding",
-      withBoot(async () => {
-        const { clearPersistedExtensionData } = await import("./lifecycle/runtimeCleanup.js");
-        await clearPersistedExtensionData(context);
-        panel.showWelcomeInSidebar(context);
-        connectionService?.showConnectorPanel("welcome");
-        vscode.window.showInformationMessage(
-          "LocalBridge data was reset. Use Get Started in the sidebar to connect again."
-        );
-      })
-    ),
     vscode.commands.registerCommand("localbridge.openSettings", () =>
-      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:localbridge.localbridge")
+      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:Darshangupta.localbridge")
     ),
     vscode.commands.registerCommand(
       "localbridge.statusMenu",

@@ -243,7 +243,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
         break;
 
       case "openSettings":
-        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:localbridge.localbridge");
+        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:Darshangupta.localbridge");
         break;
 
       case "start":

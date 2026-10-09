@@ -213,6 +213,64 @@ export class PermissionManager {
     });
   }
 
+  requestCommandPermission(
+    command: string,
+    toolName: string,
+    reason?: string
+  ): Promise<PermissionDecision> {
+    return this.runExclusively(async () => {
+      this.log.info(`Permission requested: operation=${toolName} command=${command.slice(0, 120)}`);
+      const client = this.clientLabel();
+      const preview =
+        command.length > 400 ? `${command.slice(0, 400)}…` : command;
+      const choice = await vscode.window.showWarningMessage(
+        [
+          "LocalBridge — Shell Command",
+          "",
+          `${client} wants to run (${toolName}):`,
+          "",
+          preview,
+          "",
+          reason ? `Reason: ${reason}` : "",
+          "",
+          "This executes on your machine inside the workspace.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        { modal: true },
+        "Allow",
+        "Deny"
+      );
+      const decision = choice === "Allow" ? "allow" : "deny";
+      this.logPermissionResult(toolName, preview, decision === "allow" ? "granted" : "denied");
+      return decision;
+    });
+  }
+
+  requestHttpPermission(url: string, method: string): Promise<PermissionDecision> {
+    return this.runExclusively(async () => {
+      this.log.info(`Permission requested: operation=http_request url=${url}`);
+      const client = this.clientLabel();
+      const choice = await vscode.window.showWarningMessage(
+        [
+          "LocalBridge — Local HTTP Request",
+          "",
+          `${client} wants to send:`,
+          "",
+          `${method} ${url}`,
+          "",
+          "Only localhost targets are allowed.",
+        ].join("\n"),
+        { modal: true },
+        "Allow",
+        "Deny"
+      );
+      const decision = choice === "Allow" ? "allow" : "deny";
+      this.logPermissionResult("http_request", url, decision === "allow" ? "granted" : "denied");
+      return decision;
+    });
+  }
+
   requestDeletePermission(relativePath: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=delete_file path=${relativePath}`);

@@ -19,6 +19,7 @@ import {
 import { PermissionManager } from "../security/permissionManager.js";
 import type { WorkspaceManager } from "../security/workspaceManager.js";
 import type { Logger } from "../logger.js";
+import { registerExecutionTools } from "./executionTools.js";
 
 export interface ToolHandlersContext {
   services: AppServices;
@@ -272,6 +273,8 @@ export function registerMcpTools(server: McpServer, ctx: ToolHandlersContext): v
 
   registerGitTools(server, ctx);
   registerContextTools(server, ctx);
+
+  registerExecutionTools(server, ctx);
 }
 
 function registerGitTools(server: McpServer, ctx: ToolHandlersContext): void {
@@ -353,7 +356,7 @@ function registerContextTools(server: McpServer, ctx: ToolHandlersContext): void
   );
 }
 
-async function runTool(
+export async function runTool(
   ctx: ToolHandlersContext,
   operation: string,
   pathLabel: string | undefined,
@@ -393,6 +396,10 @@ async function runTool(
 
 function ok(text: string) {
   return { content: [{ type: "text" as const, text }] };
+}
+
+export function okJson(value: unknown) {
+  return ok(JSON.stringify(value, null, 2));
 }
 
 function parentDirectoryOf(relativeFilePath: string): string {

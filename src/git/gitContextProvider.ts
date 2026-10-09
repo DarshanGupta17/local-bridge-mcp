@@ -49,6 +49,32 @@ export class GitContextProvider {
     return [`Current branch: ${branch}`, upstream ? `Upstream: ${upstream}` : ""].filter(Boolean).join("\n");
   }
 
+  async log(maxCount = 20): Promise<string> {
+    const out = await this.runGit(["log", `-n`, String(maxCount), "--oneline"]);
+    return out.trim() || "No commits.";
+  }
+
+  async show(revision: string): Promise<string> {
+    const rev = revision?.trim() || "HEAD";
+    let out = await this.runGit(["show", "--stat", rev]);
+    const full = await this.runGit(["show", rev]);
+    if (Buffer.byteLength(full, "utf8") > MAX_DIFF_BYTES) {
+      out += `\n\n(show output truncated — exceeds ${MAX_DIFF_BYTES} bytes)`;
+    } else {
+      out += `\n\n${full}`;
+    }
+    return out.trim();
+  }
+
+  async stagedDiff(relativePath?: string): Promise<string> {
+    const args = ["diff", "--cached"];
+    if (relativePath) {
+      args.push("--", relativePath);
+    }
+    const out = await this.runGit(args);
+    return out.trim() || "No staged changes.";
+  }
+
   async diff(relativePath?: string, includeSensitive = false): Promise<string> {
     if (relativePath) {
       const norm = normalizeRelativePath(relativePath);

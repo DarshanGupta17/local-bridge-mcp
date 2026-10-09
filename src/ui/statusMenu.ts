@@ -82,7 +82,7 @@ export async function showStatusMenu(connectionService: ConnectionService): Prom
     label: "$(gear) Open Settings",
     detail: "Open LocalBridge configuration in VS Code Settings",
     action: () =>
-      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:localbridge.localbridge"),
+      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:Darshangupta.localbridge"),
   });
 
   // Action: Restart / Stop / Start

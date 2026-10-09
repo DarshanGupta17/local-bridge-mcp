@@ -316,6 +316,7 @@ export class ConnectionService {
   }
 
   private async stopInternal(): Promise<void> {
+    this.services.disposeExecution();
     if (this.tunnel) {
       await this.tunnel.stop();
       this.tunnel = undefined;

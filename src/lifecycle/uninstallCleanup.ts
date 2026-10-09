@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 /** Must match package.json publisher.name */
-export const EXTENSION_ID = "localbridge.localbridge";
+export const EXTENSION_ID = "Darshangupta.localbridge";
 
 const SECRET_KEY_PREFIXES = [
   `secret://${EXTENSION_ID}/localbridge.`,

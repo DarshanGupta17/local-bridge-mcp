@@ -1,518 +1,209 @@
 # LocalBridge
 
-LocalBridge is a **local-first** VS Code extension that exposes your **workspace** as an MCP server (HTTP + ngrok). AI clients (ChatGPT, Claude, others) are **untrusted**: every MCP request is authenticated, validated against workspace boundaries, classified for sensitivity, and (for mutations) approved in VS Code before any filesystem change.
+**LocalBridge** is a VS Code extension that turns the folder you have open in the editor into a **remote MCP server** your AI tools can call safely. The model stays in Claude, ChatGPT, or another MCP client; **your code, terminal, git state, and diagnostics stay on your machine**. LocalBridge handles authentication, workspace boundaries, sensitive-file rules, and VS Code approval dialogs before anything destructive runs.
 
-## Architecture
+**Product site and connection guides:** [https://localbridge.widgetkraft.com](https://localbridge.widgetkraft.com)
+
+Install it from the VS Code Marketplace.
+
+> **Local-first:** LocalBridge is a **free VS Code extension**. There is **no LocalBridge backend server**—the MCP server runs inside VS Code on your computer, your project files stay on disk, and tools execute in your workspace. Remote AI clients only talk to **your machine** (localhost, or an optional tunnel you configure). The **LocalBridge MCP token** and **ngrok authtoken** are stored in **VS Code SecretStorage** on your system.
+
+---
+
+## What it is for
+
+Use LocalBridge when you want an AI agent to:
+
+- Read and edit project files **in the repo you already opened in VS Code**
+- Run **tests and shell commands** in that workspace (with limits and approval where needed)
+- Inspect **git status/diff**, **editor context**, and **language diagnostics**
+- Hit **local dev servers** (localhost HTTP) while you iterate
+- Share **project context** across sessions or different agents (`get_project_context` / `update_project_context`)
+
+LocalBridge is **not** a cloud IDE. The MCP server listens on **localhost**; optional **ngrok** or **Cloudflare quick tunnel** exposes it over HTTPS so remote MCP clients (e.g. Claude in the browser) can reach your machine.
+
+---
+
+## How connection works
 
 ```
-VS Code Extension
-│
-├── Authentication Manager (MCP token in SecretStorage)
-├── Security Engine (paths, symlinks, limits, binary detection)
-├── Permission Engine (centralized VS Code prompts)
-├── Context Engine (agent-independent project context)
-├── Audit Engine (local metadata log)
-├── Workspace Manager (multi-root)
-├── Git Context Provider (read-only git tools)
-├── MCP HTTP Server (/mcp)
-└── ngrok Manager (optional public HTTPS)
-
-ChatGPT / Claude / MCP client
-        │  HTTPS + token (URL ?access_token=… and/or Bearer header)
+MCP client (Claude, ChatGPT, …)
+        │  HTTPS + LocalBridge token
         ▼
-https://xxxxx.ngrok-free.app/mcp?access_token=local_…  (or http://127.0.0.1:<port>/mcp?…)
+Public tunnel (optional)     or     http://127.0.0.1:<port>/mcp
         │
         ▼
-     ngrok tunnel (optional)
-        │
+LocalBridge MCP server in VS Code
+        │  auth → workspace checks → permissions → tools
         ▼
-localhost MCP server → Security → Permissions → tools
-        │
-        ▼
-Workspace folder(s)
+Your workspace folder(s)
 ```
 
-### Credentials (two different tokens)
+1. **Open a folder** in VS Code (a real project workspace).
+2. Open the **LocalBridge** activity bar sidebar.
+3. Complete setup if prompted, then click **Start** (connections are **not** auto-started when you only open the sidebar).
+4. Copy the MCP endpoint:
+   - **LocalBridge: Copy MCP Endpoint (with token, for Claude)** — full URL including `access_token` (best for Claude and ChatGPT).
+   - Or **Copy MCP Endpoint** + **Copy MCP Authentication Token** and combine manually.
+5. In your MCP client, add a **remote HTTP** connector using **No sign-in / No OAuth** and paste the **full URL with token**. Step-by-step for each client is on [localbridge.widgetkraft.com](https://localbridge.widgetkraft.com).
 
-| Credential | Purpose |
-|------------|---------|
-| **ngrok authtoken** | Authenticates your ngrok agent/account for the tunnel |
-| **LocalBridge MCP token** (`local_…`) | Authenticates HTTP requests to the local MCP server |
+### Credentials
 
-The LocalBridge MCP token is generated on first activation, stored in **VS Code SecretStorage**, and required on every `/mcp` request when `localbridge.mcp.requireAuth` is enabled (default).
+| Credential | Purpose | Storage |
+|------------|---------|---------|
+| **LocalBridge MCP token** (`local_…`) | Authenticates every `/mcp` request. Required when `localbridge.mcp.requireAuth` is true (default). | VS Code **SecretStorage** |
+| **ngrok authtoken** (optional) | Authenticates the ngrok agent when you enable a public HTTPS tunnel. | VS Code **SecretStorage** (command **LocalBridge: Configure ngrok**) or settings/env—see below |
 
-Send the token in any of these ways:
+Send the MCP token via **URL query** `access_token=…`, **`Authorization: Bearer`**, or **`X-LocalBridge-Token`**.
 
-| Method | Example |
-|--------|---------|
-| **URL query (best for ChatGPT & Claude)** | `https://host/mcp?access_token=local_…` |
-| **Bearer header** | `Authorization: Bearer local_…` |
-| **Custom header** | `X-LocalBridge-Token: local_…` |
+Treat the MCP token like a password—especially in URLs (history, logs, screenshots).
 
-Also accepted query names: `token`, `api_key`.
+### Public HTTPS tunnels
 
-**Security warning:** The LocalBridge authentication token grants access to the local LocalBridge MCP server. Treat it like a password—especially in URLs (logs, history, screenshots). LocalBridge does not upload source code to a LocalBridge cloud service; there is no mandatory cloud account.
+Enable **`localbridge.ngrok.enabled`** when you need a URL reachable from the internet (typical for Claude/ChatGPT remote MCP).
 
-Commands:
+**ngrok (default provider)**
 
-- **LocalBridge: Copy MCP Endpoint (with token, for Claude)** — full MCP URL with `access_token` (use for ChatGPT too)
-- **LocalBridge: Copy MCP Authentication Token** — token only
-- **LocalBridge: Regenerate Authentication Token**
-- **LocalBridge: Configure ngrok** (stores ngrok token in SecretStorage)
+- Set your authtoken via **LocalBridge: Configure ngrok** (recommended—it saves to SecretStorage), setting **`localbridge.ngrok.authtoken`**, or `NGROK_AUTHTOKEN` before starting VS Code.
+- **Static URL every time:** reserve a domain in the [ngrok dashboard](https://dashboard.ngrok.com/domains), then set **`localbridge.ngrok.domain`** (or `NGROK_DOMAIN`) to e.g. `your-name.ngrok-free.app`. LocalBridge reuses that host on each start; if binding fails, it falls back to a random ngrok URL and shows a warning.
 
-### Permission model (summary)
+**Cloudflare quick tunnel**
 
-| Operation | Normal | Sensitive |
-|-----------|--------|-----------|
-| read_file | automatic | ask |
-| search_file | automatic (sensitive excluded) | ask if explicitly scoped |
-| write_file | ask | ask + high-risk |
-| create_file / create_directory | ask | ask + high-risk |
-| delete_file | ask | ask + high-risk |
-| delete_directory | ask + high-risk | ask + high-risk |
+- Set **`localbridge.public.provider`** to **`cloudflare`**.
+- **`cloudflared` must be installed on your system** (the extension does not bundle the CLI for quick tunnels).
 
-No filesystem mutation runs before user approval. Writes use SHA-256 conflict detection if the file changes while a prompt is open.
+  **Windows**
 
-### MCP tool groups
+  ```powershell
+  winget install --id Cloudflare.cloudflared
+  ```
 
-- **FILE:** `read_file`, `search_file`, `write_file`, `create_file`, `delete_file`
-- **DIRECTORY:** `create_directory`, `delete_directory`
-- **GIT (read-only):** `git_status`, `git_diff`, `git_branch`
-- **CONTEXT:** `get_project_context`, `update_project_context`
+  **macOS**
 
-Project context is stored in extension global storage (not a copy of your repo), shared across agents.
+  ```bash
+  brew install cloudflared
+  ```
 
-## Connect ChatGPT and Claude
+- After installing, **restart VS Code** so LocalBridge can find `cloudflared` on your PATH (or set **`localbridge.cloudflared.path`** to the full executable path).
 
-ChatGPT and Claude usually **do not** offer a separate “API key” field for custom MCP servers. LocalBridge auth is **not** OAuth—do not pick “Sign in” / OAuth flows. Put your stable `local_…` token in the **connector URL** and choose **no client-side sign-in**.
+---
 
-### 1. Copy the authenticated connector URL
+## MCP tools (29)
 
-1. Start LocalBridge (**LocalBridge: Start** or F5 with auto-start).
-2. Command Palette → **LocalBridge: Copy MCP Endpoint (with token, for Claude)**.
-3. Confirm the warning. Your clipboard will contain something like:
+All tools operate on the **authorized workspace** unless noted. File mutations and many commands require **explicit approval in VS Code**.
 
-```text
-https://your-name.ngrok-free.app/mcp?access_token=local_xxxxxxxxxxxxxxxx
-```
+### Files and directories
 
-For localhost-only testing:
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read a workspace-relative file (sensitive paths prompt first). |
+| `search_file` | Search file contents; sensitive paths excluded from whole-repo search. |
+| `write_file` | Replace an existing file (always prompts). |
+| `create_file` | Create a new file (prompts). |
+| `delete_file` | Delete a file (prompts). |
+| `create_directory` | Create a directory (prompts). |
+| `delete_directory` | Delete a directory tree (high-risk prompt; `.git` blocked). |
 
-```text
-http://127.0.0.1:54321/mcp?access_token=local_xxxxxxxxxxxxxxxx
-```
+### Git (read-only)
 
-The `access_token` value stays the same across restarts until you run **LocalBridge: Regenerate Authentication Token**. You configure the connector **once**, not every session.
+| Tool | Description |
+|------|-------------|
+| `git_status` | Porcelain-style status summary. |
+| `git_branch` | Current branch and upstream. |
+| `git_diff` | Bounded diff; sensitive paths need read approval. |
+| `git_log` | Recent commits (oneline). |
+| `git_show` | Show a revision (default `HEAD`). |
+| `git_staged_diff` | Diff of staged changes. |
 
-To build the URL yourself: run **LocalBridge: Copy MCP Endpoint** and **LocalBridge: Copy MCP Authentication Token**, then append:
+### Shared context
 
-```text
-?access_token=<paste-token-here>
-```
+| Tool | Description |
+|------|-------------|
+| `get_project_context` | Load agent-independent project notes stored by LocalBridge. |
+| `update_project_context` | Update summary, tasks, todos, conventions, etc. |
 
-(URL-encode the token if it contains special characters.)
+### Execution and processes
 
-### 2. ChatGPT
+| Tool | Description |
+|------|-------------|
+| `run_command` | Run a finite shell command in the workspace (timeout, bounded output). |
+| `start_process` | Start a long-running managed process. |
+| `read_process_output` | Read stdout/stderr from a managed process. |
+| `send_process_input` | Write to process stdin when supported. |
+| `stop_process` | Graceful stop (optional force). |
+| `list_processes` | List LocalBridge-managed processes only. |
+| `read_terminal` | Recent output from managed processes (not arbitrary VS Code terminals). |
 
-ChatGPT’s MCP UI labels vary by plan; use the option that means **no OAuth / no sign-in** (often **No auth**).
+### Diagnostics, tests, runtime
 
-1. Open **Settings** → **Developer** / **Apps & Connectors** (or your plan’s MCP area).
-2. **Add** a custom MCP server / connector → type **HTTP** / **Remote**.
-3. **Authentication:** **No auth** (do not use OAuth or “sign in with …”).
-4. **Server URL:** paste the **entire** URL from step 1, including `?access_token=local_…`.
-5. Save and enable the connector for a chat.
+| Tool | Description |
+|------|-------------|
+| `get_diagnostics` | VS Code language diagnostics for workspace files. |
+| `run_tests` | Detect project type and run tests (npm/pytest/go/cargo/etc.; no auto-install). |
+| `list_local_servers` | Ports inferred from managed process output (no wide port scan). |
+| `http_request` | HTTP to **localhost only** (prompt + size limits). |
+| `get_environment` | Safe metadata (OS, Node version, etc.—**not** env var values). |
 
-If the connector only has a URL field, the query parameter is how ChatGPT sends your LocalBridge token.
+### Workspace awareness
 
-### 3. Claude
+| Tool | Description |
+|------|-------------|
+| `get_workspace_info` | Folders, detected project type, git summary. |
+| `get_active_editor` | Active file, language, selection, cursor (workspace only). |
 
-Claude’s connector check returns **401** if the URL has no token; the UI may then suggest **Sign in now** (OAuth). That does not apply to localbridge.
+---
 
-1. Add or edit your **custom connector** / remote MCP server.
-2. **Authentication:** **No sign-in** (servers that use an API key in the URL instead of OAuth).
-3. **Server URL:** paste the **entire** URL from step 1, including `?access_token=local_…`.
-4. Save and reconnect.
+## Security model (summary)
 
-Do **not** select **Sign in now** or **Sign in when needed** unless LocalBridge adds OAuth in the future.
+- Paths are resolved under workspace roots with traversal and symlink checks.
+- Sensitive files (e.g. `.env`, keys) use read/search/write rules in `sensitivePathDetector`.
+- **Destructive file ops** and **risky commands** use centralized VS Code modals (`PermissionManager`).
+- Command output is **size-limited** and **redacted** for common secret patterns.
+- **Audit log** records operation metadata locally (no file contents)—**LocalBridge: View Audit Log**.
 
-### 4. Optional: Bearer header instead of URL
+Details and client-specific connection troubleshooting: [localbridge.widgetkraft.com](https://localbridge.widgetkraft.com).
 
-If your client exposes custom headers, you can use the plain URL (`…/mcp` without query) plus:
+---
 
-```http
-Authorization: Bearer local_<your-token>
-```
+## VS Code commands
 
-Get the token with **LocalBridge: Copy MCP Authentication Token**.
+| Command | Purpose |
+|---------|---------|
+| LocalBridge: Start / Stop / Restart | Control the MCP server (and optional tunnel). |
+| LocalBridge: Open / Show Connector | Open the connector panel. |
+| LocalBridge: Copy MCP Endpoint | URL without token. |
+| LocalBridge: Copy MCP Endpoint (with token, for Claude) | Full authenticated URL for MCP clients. |
+| LocalBridge: Copy MCP Authentication Token | Token only. |
+| LocalBridge: Regenerate Authentication Token | Invalidate old clients’ URLs. |
+| LocalBridge: Configure ngrok | Store ngrok authtoken in SecretStorage. |
+| LocalBridge: Open Settings | Extension settings. |
+| LocalBridge: View / Clear Audit Log | Local operation history. |
 
-### 5. Fallback (less secure)
+Status bar shows **LocalBridge: Local** (localhost) or **Connected** (public tunnel). Click for the status menu.
 
-If a client cannot send the token in the URL or headers, set **`localbridge.mcp.requireAuth`** to **`false`** in VS Code Settings and use the plain connector URL with **No auth** / **No sign-in**. Prefer this only on **localhost**; a public ngrok URL without auth is open to anyone who discovers the URL.
+---
 
-## Requirements
+## Settings worth knowing
 
-- [Node.js](https://nodejs.org/) (LTS recommended)
-- npm
-- [Visual Studio Code](https://code.visualstudio.com/)
-- ngrok account + authtoken ([ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken))
-- An MCP-capable client (for example ChatGPT with developer/custom MCP connector support)
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `localbridge.mcp.requireAuth` | `true` | Require MCP token on `/mcp`. |
+| `localbridge.ngrok.enabled` | `false` | When `true`, expose MCP via ngrok or Cloudflare (see `localbridge.public.provider`). |
+| `localbridge.mcp.port` | `0` | Local port (`0` = automatic). |
+| `localbridge.maxReadFileSize` / `maxWriteFileSize` | 5 MiB | File tool limits. |
+| `localbridge.execution.defaultCommandTimeoutMs` | 120000 | Default `run_command` timeout. |
 
-## Install dependencies
+**ngrok authtoken:** **LocalBridge: Configure ngrok** (SecretStorage), `localbridge.ngrok.authtoken`, or `NGROK_AUTHTOKEN` before launching VS Code.
 
-```bash
-npm install
-```
+**ngrok static domain:** `localbridge.ngrok.domain` or `NGROK_DOMAIN` — same public MCP URL on every start (see [Public HTTPS tunnels](#public-https-tunnels)).
 
-## Compile
+**Cloudflare:** `localbridge.public.provider` = `cloudflare`; install `cloudflared` and restart VS Code (see above).
 
-```bash
-npm run compile
-```
+---
 
-Watch mode (used by F5):
+## Output and support
 
-```bash
-npm run watch
-```
+- **Output** panel → channel **LocalBridge** for connection events (no file contents or tokens).
+- Uninstalling runs cleanup of LocalBridge secrets and related user settings where possible.
 
-## Configure ngrok authtoken
-
-LocalBridge uses the [`@ngrok/ngrok`](https://www.npmjs.com/package/@ngrok/ngrok) npm package (no separate ngrok CLI required for basic use). You must provide an authtoken.
-
-**Important (F5 / Extension Development Host):** Setting `$env:NGROK_AUTHTOKEN` only in the **integrated terminal** does **not** pass the token to the extension. The Extension Host uses the environment from the **Cursor/VS Code app process** (or the F5 launch profile).
-
-**Recommended for F5 development:**
-
-1. Copy `.vscode/.env.example` → `.vscode/.env` in the **LocalBridge repo root** (same folder as `package.json`)
-2. Put your token in `.vscode/.env` (gitignored)
-3. Press **F5** — the extension loads that file from its **install path** (not from `test-project`, which is the opened workspace)
-
-**Localhost fallback:** If ngrok is missing, misconfigured, or fails, LocalBridge still starts the MCP server and shows **`http://127.0.0.1:<port>/mcp`**. Status bar: **LocalBridge: Local**. Use `npm run test:mcp` or an MCP client on the same machine. ChatGPT on the internet still needs a working ngrok URL.
-
-Alternatively, set **`localbridge.ngrok.authtoken`** in **User** or **Workspace** Settings (works in both normal and Extension Development Host windows).
-
-### Option A — VS Code setting
-
-In **Settings** → search `LocalBridge` → **Ngrok: Authtoken**, paste your token.
-
-Or in `settings.json`:
-
-```json
-{
-  "localbridge.ngrok.authtoken": "YOUR_NGROK_AUTHTOKEN"
-}
-```
-
-### Option B — environment variable
-
-Set `NGROK_AUTHTOKEN` before launching VS Code:
-
-**Windows (PowerShell)**
-
-```powershell
-$env:NGROK_AUTHTOKEN = "YOUR_NGROK_AUTHTOKEN"
-code .
-```
-
-**macOS / Linux**
-
-```bash
-export NGROK_AUTHTOKEN="YOUR_NGROK_AUTHTOKEN"
-code .
-```
-
-### Static ngrok domain (optional)
-
-To reuse the **same public URL** every time you start LocalBridge, reserve a domain in the [ngrok domains dashboard](https://dashboard.ngrok.com/domains) and add it to `.vscode/.env`:
-
-```env
-NGROK_DOMAIN=your-name.ngrok-free.app
-```
-
-You can also set **`localbridge.ngrok.domain`** in VS Code settings. Alias env var: `NGROK_STATIC_DOMAIN`.
-
-LocalBridge binds that domain when starting ngrok. If it fails (domain not on your account, already in use, etc.), it **automatically falls back** to a random ngrok URL and shows a warning. Check the **LocalBridge** output channel for `ngrok domain mode: static` vs `ephemeral`.
-
-Connector URL with a static domain:
-
-```text
-https://your-name.ngrok-free.app/mcp
-```
-
-### Install ngrok (optional CLI)
-
-The extension embeds ngrok via npm. If tunnel startup fails, you can also install the ngrok agent from [ngrok.com/download](https://ngrok.com/download) for troubleshooting.
-
-## Run the extension (F5)
-
-1. Open this repository in VS Code.
-2. Run **Developer: Run Extension** or press **F5**.
-3. A new **Extension Development Host** window opens with `test-project/` loaded (configured in `.vscode/launch.json`).
-4. Start the server from the sidebar with **Continue** (setup) or **Start** (dashboard)—connections are never started automatically when you open the activity bar.
-5. Status bar should show **LocalBridge: Connected** (if ngrok is configured).
-6. Click the status bar item or run **LocalBridge: Show Connector** to see the public URL.
-
-### Commands
-
-| Command | ID |
-|--------|-----|
-| LocalBridge: Start | `localbridge.start` |
-| LocalBridge: Stop | `localbridge.stop` |
-| LocalBridge: Restart | `localbridge.restart` |
-| LocalBridge: Open | `localbridge.open` |
-| LocalBridge: Open Settings | `localbridge.openSettings` |
-| LocalBridge: Copy MCP Endpoint | `localbridge.copyConnectorUrl` |
-| LocalBridge: Copy MCP Endpoint (with token, for Claude) | `localbridge.copyAuthenticatedConnectorUrl` |
-| LocalBridge: Show Connector | `localbridge.showConnector` |
-| LocalBridge: Reset Onboarding | `localbridge.resetOnboarding` |
-
-Uninstalling the extension runs an cleanup hook that removes LocalBridge global storage, clears `localbridge.*` user settings (including ngrok static domain), and deletes stored secrets (ngrok authtoken, MCP auth token) from Cursor/VS Code state when possible.
-
-### Output log
-
-View **Output** → channel **LocalBridge** for connection events (never logs file contents).
-
-## MCP endpoint
-
-- Local: `http://127.0.0.1:<port>/mcp`
-- Public: `https://<ngrok-subdomain>.ngrok-free.app/mcp`
-
-Transport: **MCP Streamable HTTP** (`StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk`).
-
-### MCP tools
-
-| Tool | Arguments | Permission |
-|------|-----------|------------|
-| `read_file` | `path` | Auto for normal files; **ask** for sensitive / DB credential files |
-| `search_file` | `query`, optional `path` | Auto; sensitive paths excluded (no search scope on `.env`, etc.) |
-| `write_file` | `path`, `content` | **Always ask** before any write |
-| `create_file` | `path`, `content` | Auto (creates parent folders if needed) |
-| `delete_file` | `path` | **Always ask** before delete |
-| `create_directory` | `path` | Auto (creates missing parents in one operation) |
-| `delete_directory` | `path` | **Always ask**; high-risk if non-empty; `.git` blocked |
-
-Permission dialogs use the connected MCP client name (e.g. ChatGPT, Claude, Gemini) from the MCP `initialize` handshake.
-
-Mutations happen **only after** you approve in VS Code. If the file changes while a write dialog is open, the write is rejected. See `src/workspace/security.ts` and `src/security/permissionManager.ts`.
-
-### Automated tests
-
-```bash
-npm test
-npm run test:mcp
-```
-
-## Manual end-to-end test
-
-### Step 1 — Open test workspace
-
-The F5 launch profile opens `test-project/` automatically. To test manually: **File → Open Folder** → `test-project`.
-
-### Step 2 — Run extension
-
-Press **F5** from the main LocalBridge repo window.
-
-### Step 3 — Connected status
-
-Status bar: **LocalBridge: Connected**.
-
-### Step 4 — Connect ChatGPT or Claude
-
-Follow **[Connect ChatGPT and Claude](#connect-chatgpt-and-claude)**:
-
-- Copy **LocalBridge: Copy MCP Endpoint (with token, for Claude)**.
-- **ChatGPT:** authentication **No auth**, URL with `?access_token=local_…`.
-- **Claude:** authentication **No sign-in**, same full URL.
-
-Plain URL without token (for reference only): `https://xxxxx.ngrok-free.app/mcp`.
-
-If connection fails, see **Known limitations** (ngrok free tier interstitial).
-
-### Step 5 — Test `read_file`
-
-Prompt:
-
-```text
-Read src/hello.js from my connected repository.
-```
-
-Expected: MCP `read_file` returns the contents of `test-project/src/hello.js`.
-
-### Step 6 — Test `search_file`
-
-Prompt:
-
-```text
-Search the repository for "authenticate".
-```
-
-Expected: matches in `src/auth.js`.
-
-### Step 7 — Test `write_file`
-
-Prompt:
-
-```text
-Modify src/hello.js so hello() returns "Hello LocalBridge".
-```
-
-Expected: VS Code modal/diff preview → **Allow** → file updated on disk.
-
-### Step 8 — Test sensitive `.env` read
-
-Prompt:
-
-```text
-Read .env
-```
-
-Expected: **LocalBridge — Sensitive File Access** modal. Contents are **not** returned unless you choose **Allow Once**.
-
-### Step 9 — Test `create_file` / `delete_file`
-
-After connecting ChatGPT, use these prompts:
-
-**Test A — normal read**
-
-```text
-Read src/hello.js
-```
-
-Expected: immediate response, no permission dialog.
-
-**Test B — normal search**
-
-```text
-Search the repository for authenticate
-```
-
-Expected: immediate results from normal source files.
-
-**Test C — write (permission before change)**
-
-```text
-Change hello() so it returns 'ChatGPT is updating the local code'.
-```
-
-Expected: **LocalBridge — File Modification** dialog while `src/hello.js` still has the old content on disk. Click **Allow**, then verify the file changed.
-
-**Test D — sensitive read**
-
-```text
-Read .env
-```
-
-Expected: sensitive access dialog; no contents until **Allow Once**.
-
-**Test E — create file**
-
-```text
-Create src/services/test_service.py containing a reusable test service.
-```
-
-Expected: **Create** dialog before the file exists (lists parent folders if needed). Click **Create**, then verify the file appears.
-
-**Test F — delete file**
-
-```text
-Delete src/services/test_service.py
-```
-
-Expected: **DELETE FILE** confirmation before removal. Click **Cancel** first and verify the file remains; run again and click **DELETE FILE**.
-
-### Directory / folder manual tests (ChatGPT)
-
-**Test G — Create nested folder**
-
-```text
-Create a new folder called src/services/email/templates.
-```
-
-Expected: one **Create Folder(s)** permission dialog **before** any folder exists on disk. Approve and verify `src/services/email/templates` exists.
-
-**Test H — Create nested file with new parents**
-
-```text
-Create src/services/email/email_service.py with a reusable EmailService class.
-```
-
-Expected: if parent folders are missing, the **Create** dialog lists directories that will be created. Nothing on disk until you approve.
-
-**Test I — Deny nested creation**
-
-Ask ChatGPT to create `src/test/a/b/c/test.py`, then click **Cancel**.
-
-Expected: none of `src/test`, `src/test/a`, `src/test/a/b`, `src/test/a/b/c`, or the file exist.
-
-**Test J — Delete empty folder**
-
-```text
-Delete src/services/email/templates.
-```
-
-Expected: **Delete Folder** confirmation before removal.
-
-**Test K — Delete non-empty folder**
-
-```text
-Delete src/services/email.
-```
-
-Expected: **HIGH RISK** dialog listing contained paths/counts. Deny → tree remains. Approve → folder and contents removed.
-
-**Test L — Protected `.git`**
-
-```text
-Delete the .git directory.
-```
-
-Expected: rejected immediately (`Deletion of the .git directory is disabled in localbridge.`). No override dialog.
-
-## Local MCP smoke test (no VS Code)
-
-Verifies `initialize`, `tools/list`, and `tools/call` against a minimal in-process server:
-
-```bash
-node scripts/mcp-smoke.mjs
-```
-
-## Project layout
-
-```text
-LocalBridge/
-├── package.json
-├── tsconfig.json
-├── esbuild.config.mjs
-├── README.md
-├── .vscode/launch.json
-├── .vscode/tasks.json
-├── src/
-│   ├── extension.ts
-│   ├── connectionService.ts
-│   ├── logger.ts
-│   ├── mcp/
-│   ├── workspace/
-│   ├── ngrok/
-│   └── ui/
-├── scripts/mcp-smoke.mjs
-└── test-project/
-```
-
-## Known limitations (MVP)
-
-- **Single-root workspace only** — uses the **first** folder in `vscode.workspace.workspaceFolders`.
-- **No cloud backend**, auth, git, terminal, or indexing.
-- **Write approval** is always required (including new files).
-- **ngrok free** URLs may show a browser warning page for some clients; paid ngrok or custom domains may work better with automated clients.
-- **`@ngrok/ngrok` native addon** is not bundled into `dist/extension.js`; it loads from `node_modules` at runtime (required for F5 / local install).
-- ChatGPT MCP connector settings and supported protocol versions may vary by account/region.
-
-## Security notes
-
-- All paths are resolved under the workspace root (including symlink checks where possible).
-- Sensitive file rules are centralized in `src/workspace/security.ts`.
-- Logs do not include file contents or tokens.
-
-## License
-
-MIT (placeholder — adjust as needed for your use)
+For documentation and connector setup: **[https://localbridge.widgetkraft.com](https://localbridge.widgetkraft.com)**.

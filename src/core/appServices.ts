@@ -3,6 +3,8 @@ import { AuthenticationManager } from "../auth/authenticationManager.js";
 import { AuditEngine } from "../audit/auditEngine.js";
 import { ContextEngine } from "../context/contextEngine.js";
 import { loadLocalBridgeLimits } from "../config/limits.js";
+import { loadExecutionLimits, type ExecutionLimits } from "../config/executionLimits.js";
+import { ProcessManager } from "../execution/processManager.js";
 import { SecurityEngine } from "../security/securityEngine.js";
 import { WorkspaceManager } from "../security/workspaceManager.js";
 import { gitProviderForRoot } from "../git/gitContextProvider.js";
@@ -15,6 +17,8 @@ export class AppServices {
   workspace!: WorkspaceManager;
   security!: SecurityEngine;
   git!: GitContextProvider;
+  executionLimits!: ExecutionLimits;
+  processes!: ProcessManager;
 
   private constructor(
     readonly vscodeContext: vscode.ExtensionContext,
@@ -42,6 +46,9 @@ export class AppServices {
   async bindWorkspace(folders: readonly vscode.WorkspaceFolder[]): Promise<void> {
     this.workspace = await WorkspaceManager.create(folders);
     this.security = new SecurityEngine(this.workspace, loadLocalBridgeLimits());
+    this.executionLimits = loadExecutionLimits();
+    this.processes?.disposeAll();
+    this.processes = new ProcessManager(this.executionLimits);
     this.git = gitProviderForRoot(this.workspace.primary.root);
   }
 
@@ -51,6 +58,11 @@ export class AppServices {
     this.context.setEnabled(config.get<boolean>("contextEnabled", true));
     if (this.workspace) {
       this.security = new SecurityEngine(this.workspace, loadLocalBridgeLimits());
+      this.executionLimits = loadExecutionLimits();
     }
+  }
+
+  disposeExecution(): void {
+    this.processes?.disposeAll();
   }
 }
