@@ -32,11 +32,17 @@ export function formatFriendlyError(error: string | undefined, defaultPort?: num
   }
   if (
     lower.includes("ngrok") ||
+    lower.includes("@ngrok/ngrok-") ||
+    lower.includes("native module failed to load") ||
     (lower.includes("authtoken") && !lower.includes("cloudflare"))
   ) {
+    const linuxHint =
+      lower.includes("linux") || lower.includes("header") || lower.includes("forward")
+        ? " On Linux, try updating LocalBridge or switch to Cloudflare quick tunnel in settings."
+        : "";
     return {
       type: "ngrok",
-      message: "LocalBridge couldn't establish the ngrok connection.",
+      message: `LocalBridge couldn't establish the ngrok connection.${linuxHint}`,
     };
   }
   if (lower.includes("tunnel") && lower.includes("failed")) {

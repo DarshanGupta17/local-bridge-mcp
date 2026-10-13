@@ -66,6 +66,7 @@ Enable **`localbridge.ngrok.enabled`** when you need a URL reachable from the in
 
 - Set your authtoken via **LocalBridge: Configure ngrok** (recommended—it saves to SecretStorage), setting **`localbridge.ngrok.authtoken`**, or `NGROK_AUTHTOKEN` before starting VS Code.
 - **Static URL every time:** reserve a domain in the [ngrok dashboard](https://dashboard.ngrok.com/domains), then set **`localbridge.ngrok.domain`** (or `NGROK_DOMAIN`) to e.g. `your-name.ngrok-free.app`. LocalBridge reuses that host on each start; if binding fails, it falls back to a random ngrok URL and shows a warning.
+- **Windows, macOS, and Linux:** the published extension ships native ngrok binaries for common platforms (Windows x64/arm64, macOS Intel/Apple Silicon, Linux x64/arm64 glibc and musl). If ngrok still fails on your system, use **Cloudflare quick tunnel** below.
 
 **Cloudflare quick tunnel**
 
@@ -74,13 +75,13 @@ Enable **`localbridge.ngrok.enabled`** when you need a URL reachable from the in
 
   **Windows**
 
-  ```powershell
+```powershell
   winget install --id Cloudflare.cloudflared
-  ```
+```
 
   **macOS**
 
-  ```bash
+```bash
   brew install cloudflared
   ```
 

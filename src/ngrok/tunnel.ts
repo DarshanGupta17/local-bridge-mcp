@@ -1,4 +1,5 @@
-import { forward, type Listener } from "@ngrok/ngrok";
+import type { Listener } from "@ngrok/ngrok";
+import { getNgrokForward } from "./loadNgrok.js";
 import type { Logger } from "../logger.js";
 import type { PublicTunnelHandle } from "../tunnel/types.js";
 
@@ -50,6 +51,7 @@ async function connectNgrok(
 ): Promise<NgrokTunnelHandle> {
   let listener: Listener;
   try {
+    const forward = await getNgrokForward();
     listener = await forward({
       addr: localPort,
       authtoken,
@@ -63,7 +65,7 @@ async function connectNgrok(
     if (domain) {
       throw new Error(message);
     }
-    throw new Error(`ngrok could not start: ${message}`);
+    throw new Error(message.startsWith("ngrok") ? message : `ngrok could not start: ${message}`);
   }
 
   const publicBaseUrl = listener.url()?.replace(/\/$/, "");

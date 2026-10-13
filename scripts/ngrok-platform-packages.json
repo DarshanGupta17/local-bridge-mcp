@@ -1,0 +1,18 @@
+{
+  "version": "1.7.0",
+  "packages": [
+    "@ngrok/ngrok-android-arm64",
+    "@ngrok/ngrok-darwin-arm64",
+    "@ngrok/ngrok-darwin-universal",
+    "@ngrok/ngrok-darwin-x64",
+    "@ngrok/ngrok-freebsd-x64",
+    "@ngrok/ngrok-linux-arm-gnueabihf",
+    "@ngrok/ngrok-linux-arm64-gnu",
+    "@ngrok/ngrok-linux-arm64-musl",
+    "@ngrok/ngrok-linux-x64-gnu",
+    "@ngrok/ngrok-linux-x64-musl",
+    "@ngrok/ngrok-win32-arm64-msvc",
+    "@ngrok/ngrok-win32-ia32-msvc",
+    "@ngrok/ngrok-win32-x64-msvc"
+  ]
+}
