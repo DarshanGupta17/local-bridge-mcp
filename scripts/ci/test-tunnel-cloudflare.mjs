@@ -5,6 +5,7 @@ import * as http from "node:http";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { createCiLogger } from "./logger.mjs";
+import { fetchWithRetries } from "./http-probe.mjs";
 import { fail, withTimeout, skip } from "./skip.mjs";
 
 console.log("=== Test 2b: Cloudflare quick tunnel ===");
@@ -52,16 +53,25 @@ try {
   );
 
   const url = tunnel.connectorUrl.replace(/\/mcp$/, "");
-  const probe = await withTimeout(fetch(url, { redirect: "follow" }), 45_000, "trycloudflare probe");
-  if (probe.status >= 500) {
-    fail(`Cloudflare tunnel probe failed: HTTP ${probe.status}`);
-  }
+  await withTimeout(
+    fetchWithRetries(url, {
+      attempts: 12,
+      intervalMs: 3000,
+      requestTimeoutMs: 20_000,
+      fetchInit: {
+        headers: { "User-Agent": "LocalBridge-CI/1.0 (+https://github.com/Darshangupta/local-bridge-mcp)" },
+      },
+      isOk: (res) => res.status < 500,
+    }),
+    180_000,
+    "trycloudflare HTTPS probe"
+  );
 
   console.log("Cloudflare quick tunnel reachable");
   await tunnel.stop();
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/network|timed out|ETIMEDOUT|ECONNREFUSED/i.test(msg)) {
+  if (/network|timed out|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|ECONNRESET/i.test(msg)) {
     skip(`Cloudflare quick tunnel unavailable on runner: ${msg}`);
   }
   fail(`Cloudflare tunnel test failed: ${msg}`);

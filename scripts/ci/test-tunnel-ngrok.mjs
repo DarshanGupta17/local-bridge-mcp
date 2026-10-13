@@ -4,6 +4,7 @@
 import * as http from "node:http";
 import { applyNgrokCiEnv, ngrokTokenConfigured } from "./env-ngrok.mjs";
 import { createCiLogger } from "./logger.mjs";
+import { fetchWithRetries } from "./http-probe.mjs";
 import { skip, fail, withTimeout } from "./skip.mjs";
 
 console.log("=== Test 2a: ngrok tunnel ===");
@@ -38,14 +39,17 @@ try {
     fail("ngrok did not return an HTTPS URL");
   }
 
-  const probe = await withTimeout(
-    fetch(base, { method: "GET", redirect: "follow" }),
-    30_000,
+  await withTimeout(
+    fetchWithRetries(base, {
+      attempts: 10,
+      intervalMs: 3000,
+      requestTimeoutMs: 25_000,
+      fetchInit: { method: "GET" },
+      isOk: (res) => res.ok || res.status === 404,
+    }),
+    90_000,
     "ngrok HTTPS probe"
   );
-  if (!probe.ok && probe.status !== 404) {
-    fail(`ngrok endpoint probe failed: HTTP ${probe.status}`);
-  }
 
   console.log("ngrok tunnel reachable (HTTPS probe completed)");
   await tunnel.stop();

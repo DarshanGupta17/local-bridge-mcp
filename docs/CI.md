@@ -53,7 +53,7 @@ npm run test:ci:tunnel:ngrok
 |---|----------------|------------------|
 | 1 | `test-build-vsix.mjs`, optional `vscode-extension.test.mjs` | Compile, VSIX package, core files; extension loads in VS Code test host on CI |
 | 2a | `test-tunnel-ngrok.mjs` | Production `startNgrokTunnel`, HTTPS reachability, clean stop |
-| 2b | `test-tunnel-cloudflare.mjs` | `cloudflared` via npm package, quick tunnel URL, clean stop |
+| 2b | `test-tunnel-cloudflare.mjs` | `cloudflared` via npm package; waits for connector readiness + retries HTTPS probe (trycloudflare edge lag) |
 | 3–5, 7 | `ci.integration.test.ts` | Real `WorkspaceFilesystem`, search, shell, `ProcessManager`, security helpers |
 | 6 | `mcp-http.integration.test.ts` | MCP Streamable HTTP, auth rejection, `tools/list`, `read_file` |
 
