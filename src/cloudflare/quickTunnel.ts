@@ -5,7 +5,16 @@ import type { PublicTunnelHandle } from "../tunnel/types.js";
 const TRY_CLOUDFLARE_URL =
   /https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?/gi;
 
-const START_TIMEOUT_MS = 90_000;
+const START_TIMEOUT_MS = 120_000;
+/** trycloudflare.com often rejects the first requests right after connector registration. */
+const EDGE_PROPAGATION_MS = 6_000;
+const REGISTERED_CONNECTION_RE = /Registered tunnel connection/i;
+const METRICS_SERVER_RE =
+  /Starting metrics server on ([\d.]+):(\d+)(?:\/metrics)?/i;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function killProcess(proc: ChildProcess): void {
   try {
@@ -19,6 +28,36 @@ function killProcess(proc: ChildProcess): void {
   }
 }
 
+async function metricsReady(host: string, port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${host}:${port}/ready`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      return false;
+    }
+    const body = (await res.json()) as { readyConnections?: number };
+    return (body.readyConnections ?? 0) >= 1;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForTunnelReady(
+  host: string,
+  port: number,
+  deadlineMs: number
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < deadlineMs) {
+    if (await metricsReady(host, port)) {
+      return true;
+    }
+    await sleep(500);
+  }
+  return false;
+}
+
 export async function startCloudflareQuickTunnel(
   localPort: number,
   log: Logger,
@@ -30,7 +69,7 @@ export async function startCloudflareQuickTunnel(
   return new Promise((resolve, reject) => {
     let proc: ChildProcess;
     try {
-      proc = spawn(bin, ["tunnel", "--url", localUrl], {
+      proc = spawn(bin, ["tunnel", "--url", localUrl, "--no-autoupdate"], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });
@@ -46,6 +85,9 @@ export async function startCloudflareQuickTunnel(
 
     let settled = false;
     let buffer = "";
+    let pendingPublicBaseUrl: string | undefined;
+    let sawRegisteredConnection = false;
+    let readinessPollStarted = false;
 
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -53,38 +95,79 @@ export async function startCloudflareQuickTunnel(
         killProcess(proc);
         reject(
           new Error(
-            "Timed out waiting for a Cloudflare quick tunnel URL. Is cloudflared installed?"
+            "Timed out waiting for Cloudflare quick tunnel to become ready. Is cloudflared installed?"
           )
         );
       }
     }, START_TIMEOUT_MS);
 
-    const finishWithUrl = (rawUrl: string) => {
+    const finishReady = (publicBaseUrl: string) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timeout);
-      const publicBaseUrl = rawUrl.replace(/\/$/, "");
-      const connectorUrl = `${publicBaseUrl}/mcp`;
-      log.info("Cloudflare quick tunnel started");
-      log.info(`Public URL: ${connectorUrl}`);
+      void (async () => {
+        await sleep(EDGE_PROPAGATION_MS);
+        const connectorUrl = `${publicBaseUrl}/mcp`;
+        log.info("Cloudflare quick tunnel started");
+        log.info(`Public URL: ${connectorUrl}`);
 
-      resolve({
-        connectorUrl,
-        provider: "cloudflare",
-        async stop() {
-          killProcess(proc);
-          log.info("Cloudflare quick tunnel stopped");
-        },
-      });
+        resolve({
+          connectorUrl,
+          provider: "cloudflare",
+          async stop() {
+            killProcess(proc);
+            log.info("Cloudflare quick tunnel stopped");
+          },
+        });
+      })();
+    };
+
+    const tryFinish = () => {
+      if (!pendingPublicBaseUrl || settled) {
+        return;
+      }
+      if (sawRegisteredConnection) {
+        finishReady(pendingPublicBaseUrl);
+      }
+    };
+
+    const startReadinessPoll = (host: string, port: number) => {
+      if (readinessPollStarted || settled) {
+        return;
+      }
+      readinessPollStarted = true;
+      void (async () => {
+        const ready = await waitForTunnelReady(host, port, 90_000);
+        if (ready && pendingPublicBaseUrl && !settled) {
+          finishReady(pendingPublicBaseUrl);
+        }
+      })();
+    };
+
+    const noteUrl = (rawUrl: string) => {
+      pendingPublicBaseUrl = rawUrl.replace(/\/$/, "");
+      tryFinish();
     };
 
     const scan = (text: string) => {
       buffer += text;
+      if (!sawRegisteredConnection && REGISTERED_CONNECTION_RE.test(buffer)) {
+        sawRegisteredConnection = true;
+        tryFinish();
+      }
+
+      if (!readinessPollStarted) {
+        const metricsMatch = METRICS_SERVER_RE.exec(buffer);
+        if (metricsMatch) {
+          startReadinessPoll(metricsMatch[1], Number(metricsMatch[2]));
+        }
+      }
+
       const matches = buffer.match(TRY_CLOUDFLARE_URL);
       if (matches?.[0]) {
-        finishWithUrl(matches[0]);
+        noteUrl(matches[0]);
       }
     };
 

@@ -1,0 +1,56 @@
+name: Cross-platform CI
+
+on:
+  push:
+    branches: [main, sandbox]
+  pull_request:
+    branches: [main, sandbox]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ngrok platform binaries
+        run: npm run ngrok:platforms && npm run ngrok:verify
+
+      - name: Install xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run cross-platform CI suite (Linux)
+        if: runner.os == 'Linux'
+        env:
+          CI: "true"
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: xvfb-run -a node scripts/ci/run-all.mjs
+
+      - name: Run cross-platform CI suite (macOS / Windows)
+        if: runner.os != 'Linux'
+        env:
+          CI: "true"
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: node scripts/ci/run-all.mjs

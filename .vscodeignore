@@ -13,6 +13,8 @@ tsconfig.json
 **/.env
 **/.env.example
 *.vsix
+**/*.zip
+local-bridge-landing-page.zip
 **/*.test.ts
 node_modules/@resvg/**
 node_modules/esbuild/**
@@ -20,3 +22,15 @@ node_modules/typescript/**
 node_modules/tsx/**
 node_modules/png-to-ico/**
 node_modules/@types/**
+node_modules/cloudflared/**
+node_modules/@ngrok/ngrok-android-arm64/**
+node_modules/@ngrok/ngrok-darwin-arm64/**
+node_modules/@ngrok/ngrok-darwin-x64/**
+node_modules/@ngrok/ngrok-freebsd-x64/**
+node_modules/@ngrok/ngrok-linux-arm-gnueabihf/**
+node_modules/@ngrok/ngrok-win32-ia32-msvc/**
+node_modules/**/README.md
+node_modules/**/CHANGELOG.md
+node_modules/**/*.map
+docs/**
+.github/**

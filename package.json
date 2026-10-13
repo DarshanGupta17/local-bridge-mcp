@@ -2,9 +2,9 @@
   "name": "localbridge",
   "displayName": "LocalBridge",
   "description": "Local Bridge for VS Code: connect Claude, ChatGPT, and other MCP clients to your workspace with authenticated tools for files, git, terminal, tests, and diagnostics.",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "publisher": "Darshangupta",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "LICENSE",
   "homepage": "https://localbridge.widgetkraft.com",
   "repository": {
     "type": "git",
@@ -28,8 +28,7 @@
     "remote mcp",
     "ai coding",
     "copilot",
-    "workspace",
-    "widgetkraft"
+    "workspace"
   ],
   "engines": {
     "vscode": "^1.85.0"
@@ -237,17 +236,27 @@
     "brand:generate": "node scripts/generate-brand-assets.mjs",
     "compile": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
-    "vscode:prepublish": "npm run compile",
-    "package": "vsce package",
+    "ngrok:platforms": "node scripts/install-ngrok-platforms.mjs",
+    "ngrok:patch": "node scripts/patch-ngrok-loader.mjs",
+    "ngrok:verify": "node scripts/verify-ngrok-platforms.mjs",
+    "ngrok:prune": "node scripts/prune-ngrok-extras.mjs",
+    "vscode:prepublish": "npm run ngrok:platforms && npm run ngrok:patch && npm run ngrok:prune && npm run ngrok:verify && npm run compile",
+    "package": "npm run ngrok:platforms && npm run ngrok:patch && npm run ngrok:prune && npm run ngrok:verify && vsce package",
+    "postinstall": "node scripts/patch-ngrok-loader.mjs",
     "test:mcp": "node scripts/mcp-smoke.mjs",
-    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts src/auth/authenticationManager.test.ts src/filesystem/contentHash.test.ts src/security/workspaceManager.test.ts src/ui/friendlyError.test.ts src/execution/commandPolicy.test.ts src/execution/outputRedaction.test.ts src/execution/httpClient.test.ts src/execution/commandRunner.test.ts src/execution/processManager.test.ts src/execution/workspaceCwd.test.ts src/mcp/executionIntegration.test.ts",
+    "test:ci": "node scripts/ci/run-all.mjs",
+    "test:ci:tunnel:ngrok": "tsx scripts/ci/test-tunnel-ngrok.mjs",
+    "test:ci:tunnel:cloudflare": "tsx scripts/ci/test-tunnel-cloudflare.mjs",
+    "test": "tsx --test src/workspace/security.test.ts src/workspace/filesystem.test.ts src/workspace/search.test.ts src/workspace/directories.test.ts src/ngrok/config.test.ts src/mcp/clientLabel.test.ts src/auth/authenticationManager.test.ts src/filesystem/contentHash.test.ts src/security/workspaceManager.test.ts src/ui/friendlyError.test.ts src/execution/commandPolicy.test.ts src/execution/outputRedaction.test.ts src/execution/httpClient.test.ts src/execution/commandRunner.test.ts src/execution/processManager.test.ts src/execution/workspaceCwd.test.ts src/mcp/executionIntegration.test.ts src/ngrok/ngrokErrors.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.7.0",
+    "cloudflared": "^0.7.3",
     "esbuild": "^0.25.0",
     "png-to-ico": "^2.1.8",
     "tsx": "^4.19.0",
@@ -255,8 +264,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@ngrok/ngrok": "^1.7.0",
-    "cloudflared": "^0.7.3",
+    "@ngrok/ngrok": "1.7.0",
     "sql.js": "^1.14.2",
     "zod": "^3.24.0"
   }

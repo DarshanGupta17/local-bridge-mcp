@@ -11,9 +11,12 @@ const svgPath = path.join(publicDir, "localbridge.svg");
 const pngPath = path.join(publicDir, "localbridge.png");
 const icoPath = path.join(publicDir, "localbridge.ico");
 
+/** VS Marketplace: icon must be ≤ 1024×1024 (128×128 minimum). */
+const MARKETPLACE_ICON_PX = 512;
+
 const svg = fs.readFileSync(svgPath, "utf8");
 const resvg = new Resvg(svg, {
-  fitTo: { mode: "width", value: 256 },
+  fitTo: { mode: "width", value: MARKETPLACE_ICON_PX },
 });
 const pngData = resvg.render().asPng();
 fs.writeFileSync(pngPath, pngData);
