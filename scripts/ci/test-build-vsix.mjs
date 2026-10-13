@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { listVsixEntries } from "./list-vsix-entries.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -29,12 +30,11 @@ if (!existsSync(vsixPath)) {
   process.exit(1);
 }
 
-const list = spawnSync("tar", ["-tf", vsixPath], { encoding: "utf8" });
-if (list.status !== 0) {
+const entries = listVsixEntries(vsixPath);
+if (!entries?.length) {
   console.error("Could not list VSIX contents");
   process.exit(1);
 }
-const entries = list.stdout.split("\n").filter(Boolean);
 const required = ["extension/package.json", "extension/dist/extension.js"];
 for (const req of required) {
   if (!entries.some((e) => e === req || e.endsWith(req))) {

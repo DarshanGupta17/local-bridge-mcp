@@ -23,7 +23,7 @@ describe("runShellCommand", () => {
   it("times out fast commands", async () => {
     const cmd =
       process.platform === "win32"
-        ? "powershell -NoProfile -Command Start-Sleep -Seconds 5"
+        ? 'node -e "setTimeout(()=>{}, 999999)"'
         : "sleep 5";
     const result = await runShellCommand({
       command: cmd,

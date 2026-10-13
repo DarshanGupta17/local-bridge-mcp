@@ -32,7 +32,8 @@ export async function searchInWorkspace(
 
   const allowSensitive = options?.allowSensitiveTargets ?? false;
   const maxFileBytes = options?.maxFileBytes ?? 2 * 1024 * 1024;
-  const root = fsApi.root;
+  /** Use real path so path.relative() is stable when /tmp vs /private/tmp differ (macOS CI). */
+  const workspaceRoot = fsApi.rootReal;
   const matches: SearchMatch[] = [];
   const maxMatches = 500;
 
@@ -45,17 +46,17 @@ export async function searchInWorkspace(
       if (isSensitivePath(displayScope) && !allowSensitive) {
         throw new Error("Sensitive file search requires user approval before reading.");
       }
-      await searchFile(abs, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
+      await searchFile(abs, workspaceRoot, query, matches, maxMatches, allowSensitive, maxFileBytes);
       return matches;
     }
 
     if (stat.isDirectory()) {
-      await walk(abs, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
+      await walk(abs, workspaceRoot, query, matches, maxMatches, allowSensitive, maxFileBytes);
       return matches;
     }
   }
 
-  await walk(root, root, query, matches, maxMatches, allowSensitive, maxFileBytes);
+  await walk(workspaceRoot, workspaceRoot, query, matches, maxMatches, allowSensitive, maxFileBytes);
   return matches;
 }
 
