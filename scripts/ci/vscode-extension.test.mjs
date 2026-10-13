@@ -35,7 +35,7 @@ if (!existsSync(vsixPath)) {
 }
 
 const extensionDevelopmentPath = root;
-const extensionTestsPath = path.join(root, "scripts", "ci", "vscode", "suite.test.mjs");
+const extensionTestsPath = path.join(root, "scripts", "ci", "vscode", "suite.test.js");
 
 try {
   await runTests({

@@ -13,6 +13,8 @@ GitHub Actions workflow: [`.github/workflows/ci-cross-platform.yml`](../.github/
 - `macos-latest`
 - `windows-latest`
 
+Jobs use **Node.js 22** (required by `@vscode/test-electron` 3.x for VS Code 1.110+ macOS bundles).
+
 Jobs are independent (`fail-fast: false`).
 
 ## Secret: ngrok
