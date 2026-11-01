@@ -3,6 +3,7 @@ import { isSensitivePath } from "./sensitivePathDetector.js";
 import type { DirectoryDeletePreview } from "../workspace/directories.js";
 import { isLargeDirectoryTree } from "../workspace/directories.js";
 import type { Logger } from "../logger.js";
+import type { ToolPermissionStore } from "./toolPermissions.js";
 
 export type PermissionDecision = "allow" | "deny";
 export type ReadPermissionDecision = "allow-once" | "deny";
@@ -12,12 +13,29 @@ export class PermissionManager {
 
   constructor(
     private readonly log: Logger,
-    private readonly getClientLabel: () => string
+    private readonly getClientLabel: () => string,
+    private readonly toolPermissions: ToolPermissionStore
   ) {}
 
-  requestReadPermission(relativePath: string): Promise<ReadPermissionDecision> {
+  isToolBlocked(toolName: string): boolean {
+    return this.toolPermissions.isBlocked(toolName);
+  }
+
+  requestReadPermission(
+    relativePath: string,
+    owningTool: string = "read_file"
+  ): Promise<ReadPermissionDecision> {
     return this.runExclusively(async () => {
-      this.log.info(`Permission requested: operation=read_file path=${relativePath}`);
+      this.log.info(`Permission requested: operation=${owningTool} path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel(owningTool);
+      if (policy === "blocked") {
+        this.logPermissionResult(owningTool, relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult(owningTool, relativePath, "granted");
+        return "allow-once";
+      }
       const client = this.clientLabel();
       const choice = await vscode.window.showWarningMessage(
         [
@@ -38,7 +56,7 @@ export class PermissionManager {
         "Deny"
       );
       const decision = choice === "Allow Once" ? "allow-once" : "deny";
-      this.logPermissionResult("read_file", relativePath, decision === "allow-once" ? "granted" : "denied");
+      this.logPermissionResult(owningTool, relativePath, decision === "allow-once" ? "granted" : "denied");
       return decision;
     });
   }
@@ -50,6 +68,15 @@ export class PermissionManager {
   ): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=write_file path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel("write_file");
+      if (policy === "blocked") {
+        this.logPermissionResult("write_file", relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("write_file", relativePath, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const sensitive = isSensitivePath(relativePath);
 
@@ -109,6 +136,15 @@ export class PermissionManager {
   requestDeleteDirectoryPermission(preview: DirectoryDeletePreview): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=delete_directory path=${preview.relativePath}`);
+      const policy = this.toolPermissions.getLevel("delete_directory");
+      if (policy === "blocked") {
+        this.logPermissionResult("delete_directory", preview.relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("delete_directory", preview.relativePath, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const body = formatDeleteDirectoryBody(preview, client);
 
@@ -127,6 +163,15 @@ export class PermissionManager {
   requestCreatePermission(relativePath: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=create_file path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel("create_file");
+      if (policy === "blocked") {
+        this.logPermissionResult("create_file", relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("create_file", relativePath, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const sensitive = isSensitivePath(relativePath);
       const lines = sensitive
@@ -160,6 +205,15 @@ export class PermissionManager {
   requestCreateDirectoryPermission(relativePath: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=create_directory path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel("create_directory");
+      if (policy === "blocked") {
+        this.logPermissionResult("create_directory", relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("create_directory", relativePath, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const sensitive = isSensitivePath(relativePath);
       const lines = sensitive
@@ -191,6 +245,15 @@ export class PermissionManager {
   requestSensitiveSearchPermission(relativePath: string): Promise<ReadPermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=search_file path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel("search_file");
+      if (policy === "blocked") {
+        this.logPermissionResult("search_file", relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("search_file", relativePath, "granted");
+        return "allow-once";
+      }
       const client = this.clientLabel();
       const choice = await vscode.window.showWarningMessage(
         [
@@ -220,6 +283,15 @@ export class PermissionManager {
   ): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=${toolName} command=${command.slice(0, 120)}`);
+      const policy = this.toolPermissions.getLevel(toolName);
+      if (policy === "blocked") {
+        this.logPermissionResult(toolName, command.slice(0, 120), "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult(toolName, command.slice(0, 120), "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const preview =
         command.length > 400 ? `${command.slice(0, 400)}…` : command;
@@ -250,6 +322,15 @@ export class PermissionManager {
   requestHttpPermission(url: string, method: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=http_request url=${url}`);
+      const policy = this.toolPermissions.getLevel("http_request");
+      if (policy === "blocked") {
+        this.logPermissionResult("http_request", url, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("http_request", url, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const choice = await vscode.window.showWarningMessage(
         [
@@ -274,6 +355,15 @@ export class PermissionManager {
   requestDeletePermission(relativePath: string): Promise<PermissionDecision> {
     return this.runExclusively(async () => {
       this.log.info(`Permission requested: operation=delete_file path=${relativePath}`);
+      const policy = this.toolPermissions.getLevel("delete_file");
+      if (policy === "blocked") {
+        this.logPermissionResult("delete_file", relativePath, "denied");
+        return "deny";
+      }
+      if (policy === "always_allow") {
+        this.logPermissionResult("delete_file", relativePath, "granted");
+        return "allow";
+      }
       const client = this.clientLabel();
       const sensitive = isSensitivePath(relativePath);
 

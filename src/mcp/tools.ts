@@ -304,7 +304,10 @@ function registerGitTools(server: McpServer, ctx: ToolHandlersContext): void {
       return runTool(ctx, "git_diff", scope, async () => {
         let includeSensitive = false;
         if (scope && isSensitivePath(normalizeRelativePath(scope))) {
-          const decision = await ctx.permissions.requestReadPermission(normalizeRelativePath(scope));
+          const decision = await ctx.permissions.requestReadPermission(
+            normalizeRelativePath(scope),
+            "git_diff"
+          );
           if (decision === "deny") {
             throw new LocalBridgeError("USER_PERMISSION_DENIED", "Diff denied by the user.");
           }
@@ -364,6 +367,12 @@ export async function runTool(
 ) {
   ctx.onToolCall?.(operation);
   ctx.log.info(`MCP request: ${operation}`);
+  if (ctx.permissions.isToolBlocked(operation)) {
+    throw new LocalBridgeError(
+      "USER_PERMISSION_DENIED",
+      `${operation} is blocked in LocalBridge Configure Permissions. Open Configure Permissions from the LocalBridge sidebar.`
+    );
+  }
   const client = ctx.getClientLabel();
   const started = Date.now();
   try {

@@ -420,7 +420,10 @@ function registerGitReadTools(server: McpServer, ctx: ToolHandlersContext): void
     async ({ path: scope }) => {
       return runTool(ctx, "git_staged_diff", scope, async () => {
         if (scope && isSensitivePath(normalizeRelativePath(scope))) {
-          const decision = await ctx.permissions.requestReadPermission(normalizeRelativePath(scope));
+          const decision = await ctx.permissions.requestReadPermission(
+            normalizeRelativePath(scope),
+            "git_staged_diff"
+          );
           if (decision === "deny") {
             throw new LocalBridgeError("USER_PERMISSION_DENIED", "Diff denied by the user.");
           }

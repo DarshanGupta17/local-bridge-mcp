@@ -60,8 +60,10 @@ export async function startMcpHttpServer(options: McpServerOptions): Promise<Mcp
 
     let sessionClientName: string | undefined;
 
-    const permissions = new PermissionManager(log, () =>
-      getMcpClientDisplayLabel(server, sessionClientName ?? getMcpClientInfoName(server))
+    const permissions = new PermissionManager(
+      log,
+      () => getMcpClientDisplayLabel(server, sessionClientName ?? getMcpClientInfoName(server)),
+      services.toolPermissions
     );
 
     const ctx: ToolHandlersContext = {

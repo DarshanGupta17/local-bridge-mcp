@@ -9,6 +9,7 @@ import { workspaceFolderName } from "./workspace/filesystem.js";
 import { StatusBarController } from "./ui/statusBar.js";
 import { ConnectorPanel, type ConnectorPanelState, type PanelViewStep } from "./ui/connectorPanel.js";
 import type { AppServices } from "./core/appServices.js";
+import type { ToolPermissionStore } from "./security/toolPermissions.js";
 import { appendTokenToMcpUrl } from "./auth/authenticationManager.js";
 
 const SETUP_DOCS_URL =
@@ -53,6 +54,10 @@ export class ConnectionService {
 
   getLocalConnectorUrl(): string | undefined {
     return this.localConnectorUrl;
+  }
+
+  getToolPermissionStore(): ToolPermissionStore {
+    return this.services.toolPermissions;
   }
 
   getPanelState(): ConnectorPanelState {
