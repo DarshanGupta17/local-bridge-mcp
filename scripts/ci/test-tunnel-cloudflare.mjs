@@ -53,17 +53,18 @@ try {
   );
 
   const url = tunnel.connectorUrl.replace(/\/mcp$/, "");
+  const isDarwinCi = process.env.CI === "true" && process.platform === "darwin";
   await withTimeout(
     fetchWithRetries(url, {
-      attempts: 12,
-      intervalMs: 3000,
-      requestTimeoutMs: 20_000,
+      attempts: isDarwinCi ? 24 : 16,
+      intervalMs: isDarwinCi ? 5000 : 3000,
+      requestTimeoutMs: 30_000,
       fetchInit: {
         headers: { "User-Agent": "LocalBridge-CI/1.0 (+https://github.com/Darshangupta/local-bridge-mcp)" },
       },
       isOk: (res) => res.status < 500,
     }),
-    180_000,
+    isDarwinCi ? 300_000 : 240_000,
     "trycloudflare HTTPS probe"
   );
 

@@ -6,8 +6,8 @@ const TRY_CLOUDFLARE_URL =
   /https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?/gi;
 
 const START_TIMEOUT_MS = 120_000;
-/** trycloudflare.com often rejects the first requests right after connector registration. */
-const EDGE_PROPAGATION_MS = 6_000;
+/** Extra delay after connector registration before exposing the public URL. */
+const EDGE_PROPAGATION_MS = 8_000;
 const REGISTERED_CONNECTION_RE = /Registered tunnel connection/i;
 const METRICS_SERVER_RE =
   /Starting metrics server on ([\d.]+):(\d+)(?:\/metrics)?/i;
@@ -87,7 +87,10 @@ export async function startCloudflareQuickTunnel(
     let buffer = "";
     let pendingPublicBaseUrl: string | undefined;
     let sawRegisteredConnection = false;
-    let readinessPollStarted = false;
+    let metricsHost: string | undefined;
+    let metricsPort: number | undefined;
+    let urlNotedAt: number | undefined;
+    let fallbackScheduled = false;
 
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -108,6 +111,9 @@ export async function startCloudflareQuickTunnel(
       settled = true;
       clearTimeout(timeout);
       void (async () => {
+        if (metricsHost && metricsPort) {
+          await waitForTunnelReady(metricsHost, metricsPort, 60_000);
+        }
         await sleep(EDGE_PROPAGATION_MS);
         const connectorUrl = `${publicBaseUrl}/mcp`;
         log.info("Cloudflare quick tunnel started");
@@ -125,30 +131,39 @@ export async function startCloudflareQuickTunnel(
     };
 
     const tryFinish = () => {
-      if (!pendingPublicBaseUrl || settled) {
+      if (!pendingPublicBaseUrl || settled || !sawRegisteredConnection) {
         return;
       }
-      if (sawRegisteredConnection) {
-        finishReady(pendingPublicBaseUrl);
-      }
-    };
-
-    const startReadinessPoll = (host: string, port: number) => {
-      if (readinessPollStarted || settled) {
-        return;
-      }
-      readinessPollStarted = true;
-      void (async () => {
-        const ready = await waitForTunnelReady(host, port, 90_000);
-        if (ready && pendingPublicBaseUrl && !settled) {
-          finishReady(pendingPublicBaseUrl);
-        }
-      })();
+      finishReady(pendingPublicBaseUrl);
     };
 
     const noteUrl = (rawUrl: string) => {
       pendingPublicBaseUrl = rawUrl.replace(/\/$/, "");
+      if (urlNotedAt === undefined) {
+        urlNotedAt = Date.now();
+      }
       tryFinish();
+      if (!fallbackScheduled) {
+        fallbackScheduled = true;
+        setTimeout(() => void maybeFallbackFinish(), 75_000);
+      }
+    };
+
+    const maybeFallbackFinish = async () => {
+      if (!pendingPublicBaseUrl || settled || sawRegisteredConnection || !urlNotedAt) {
+        return;
+      }
+      const elapsed = Date.now() - urlNotedAt;
+      if (elapsed < 75_000) {
+        return;
+      }
+      if (metricsHost && metricsPort) {
+        const ready = await metricsReady(metricsHost, metricsPort);
+        if (ready && !settled) {
+          log.info("Cloudflare quick tunnel using metrics fallback (no registration log seen)");
+          finishReady(pendingPublicBaseUrl);
+        }
+      }
     };
 
     const scan = (text: string) => {
@@ -158,10 +173,11 @@ export async function startCloudflareQuickTunnel(
         tryFinish();
       }
 
-      if (!readinessPollStarted) {
+      if (!metricsHost) {
         const metricsMatch = METRICS_SERVER_RE.exec(buffer);
         if (metricsMatch) {
-          startReadinessPoll(metricsMatch[1], Number(metricsMatch[2]));
+          metricsHost = metricsMatch[1];
+          metricsPort = Number(metricsMatch[2]);
         }
       }
 
