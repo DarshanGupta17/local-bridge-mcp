@@ -56,6 +56,13 @@ function registerCommands(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:Darshangupta.localbridge")
     ),
     vscode.commands.registerCommand(
+      "localbridge.openPermissions",
+      withBoot(async () => {
+        await vscode.commands.executeCommand("workbench.view.extension.localbridge");
+        panel.openPermissionsScreen();
+      })
+    ),
+    vscode.commands.registerCommand(
       "localbridge.statusMenu",
       withBoot(async () => {
         if (connectionService) {

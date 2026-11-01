@@ -7,6 +7,9 @@ export async function authorizeCommand(
   command: string,
   toolName: string
 ): Promise<CommandClassification> {
+  if (permissions.isToolBlocked(toolName)) {
+    throw new LocalBridgeError("USER_PERMISSION_DENIED", "Command execution denied by Configure Permissions.");
+  }
   const classification = classifyCommand(command);
   if (classification.risk === "block") {
     throw new LocalBridgeError(

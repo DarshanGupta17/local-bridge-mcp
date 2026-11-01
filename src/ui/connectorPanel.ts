@@ -2,8 +2,10 @@ import * as vscode from "vscode";
 import type { ConnectionService } from "../connectionService.js";
 import { storeNgrokAuthtoken, hasNgrokAuthtokenSecure } from "../ngrok/secrets.js";
 import { formatFriendlyError, type FriendlyError } from "./friendlyError.js";
+import { renderPermissionsScreenBody } from "./permissionsViewHtml.js";
+import type { ToolPermissionLevel } from "../security/toolPermissions.js";
 
-export type PanelViewStep = "welcome" | "setup" | "running";
+export type PanelViewStep = "welcome" | "setup" | "running" | "permissions";
 
 export type PublicTunnelProvider = "ngrok" | "cloudflare";
 
@@ -40,6 +42,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
   private connectionService: ConnectionService | undefined;
   private ensureBoot: (() => Promise<void>) | undefined;
   private onSidebarOpen: (() => void | Promise<void>) | undefined;
+  private permissionStoreSub: vscode.Disposable | undefined;
 
   readonly viewType = "localbridge.sidebar";
 
@@ -89,6 +92,20 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
   bindContext(context: vscode.ExtensionContext, connectionService: ConnectionService): void {
     this.context = context;
     this.connectionService = connectionService;
+    this.permissionStoreSub?.dispose();
+    this.permissionStoreSub = connectionService
+      .getToolPermissionStore()
+      .onDidChange(() => {
+        if (this.currentStep === "permissions") {
+          void this.renderHtml();
+        }
+      });
+  }
+
+  /** Full-screen permissions step inside the same sidebar webview. */
+  openPermissionsScreen(): void {
+    this.currentStep = "permissions";
+    void this.renderHtml();
   }
 
   /** Sidebar open / visible: welcome until onboarding Continue; then dashboard. */
@@ -102,6 +119,9 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
     }
     if (this.currentStep === "welcome") {
       this.currentStep = "running";
+    }
+    if (this.currentStep === "permissions") {
+      return;
     }
   }
 
@@ -189,7 +209,8 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
         if (
           message.step === "welcome" ||
           message.step === "setup" ||
-          message.step === "running"
+          message.step === "running" ||
+          message.step === "permissions"
         ) {
           this.currentStep = message.step;
           await this.renderHtml();
@@ -245,6 +266,36 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
       case "openSettings":
         await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:Darshangupta.localbridge");
         break;
+
+      case "openPermissions":
+        this.currentStep = "permissions";
+        await this.renderHtml();
+        break;
+
+      case "setPermissionLevel": {
+        const tool = typeof message.tool === "string" ? message.tool : "";
+        const level = message.level as ToolPermissionLevel;
+        if (
+          tool &&
+          (level === "always_allow" || level === "needs_approval" || level === "blocked")
+        ) {
+          this.connectionService.getToolPermissionStore().setLevel(tool, level);
+          await this.renderHtml();
+        }
+        break;
+      }
+
+      case "resetAllPermissions": {
+        const confirm = await vscode.window.showWarningMessage(
+          "Reset all tool permissions to Needs Approval?",
+          "Reset"
+        );
+        if (confirm === "Reset") {
+          this.connectionService.getToolPermissionStore().resetAll();
+          await this.renderHtml();
+        }
+        break;
+      }
 
       case "start":
         await this.connectionService.start();
@@ -309,8 +360,11 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
 
     const friendlyErr = formatFriendlyError(state.error, state.localPort);
 
+    const permissionLevels = this.connectionService.getToolPermissionStore().snapshot();
+
     const baseData = {
       step: this.currentStep,
+      permissionLevels,
       workspaceName: state.workspaceName,
       mcpRunning: state.mcpRunning,
       endpointUrl: state.publicUrl,
@@ -353,6 +407,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
     hasCompletedSetup: boolean;
     friendlyError?: FriendlyError;
     warning?: string;
+    permissionLevels: Record<string, ToolPermissionLevel>;
   }): string {
     const {
       logoUri,
@@ -370,6 +425,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
       hasCompletedSetup,
       friendlyError,
       warning,
+      permissionLevels,
     } = data;
 
     return `<!DOCTYPE html>
@@ -929,6 +985,59 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
       align-items: center;
       margin-top: 24px;
     }
+    .perm-screen { padding-bottom: 16px; }
+    .perm-header-row { margin-bottom: 12px; }
+    .perm-back { font-size: 0.9em; }
+    .perm-title { font-size: 1.15em; font-weight: 600; margin: 0 0 4px; }
+    .perm-subtitle { font-size: 0.88em; opacity: 0.75; margin: 0 0 10px; font-weight: 500; }
+    .perm-lead { opacity: 0.85; margin: 0 0 12px; font-size: 0.92em; line-height: 1.45; }
+    .perm-toolbar { margin-bottom: 12px; }
+    .perm-category-title {
+      font-size: 0.72em;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+      margin: 16px 0 8px;
+      font-weight: 600;
+    }
+    .perm-tool {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      margin-bottom: 8px;
+      background: var(--vscode-editor-background);
+    }
+    .perm-tool-name { font-weight: 600; font-size: 0.95em; }
+    .perm-tool-id {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.78em;
+      opacity: 0.65;
+      display: block;
+    }
+    .perm-tool-desc { font-size: 0.82em; opacity: 0.8; margin: 4px 0 8px; }
+    .perm-levels { display: flex; flex-wrap: wrap; gap: 6px; }
+    .perm-level-btn {
+      flex: 1 1 30%;
+      min-width: 0;
+      font-size: 0.72em;
+      padding: 6px 4px;
+      border-radius: 4px;
+      border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.45));
+      background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.12));
+      color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+      cursor: pointer;
+      font-weight: 400;
+    }
+    .perm-level-btn.active {
+      background-color: var(--vscode-button-background, #0078d4);
+      color: var(--vscode-button-foreground, #ffffff);
+      border-color: var(--vscode-focusBorder, #0078d4);
+      box-shadow: 0 0 0 1px var(--vscode-focusBorder, #0078d4);
+      font-weight: 600;
+    }
+    .perm-level-btn:hover:not(.active) {
+      background: var(--vscode-list-hoverBackground);
+    }
   </style>
 </head>
 <body>
@@ -948,6 +1057,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
       hasCompletedSetup,
       friendlyError,
       warning,
+      permissionLevels,
     })}
   </div>
   <script>
@@ -955,6 +1065,10 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
 
     function post(command, payload = {}) {
       vscode.postMessage({ command, ...payload });
+    }
+
+    function setPermissionLevel(tool, level) {
+      post("setPermissionLevel", { tool, level });
     }
 
     let selectedMode = "${connectionMode === "public" ? "public" : "local"}";
@@ -1059,12 +1173,15 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
     hasCompletedSetup: boolean;
     friendlyError?: FriendlyError;
     warning?: string;
+    permissionLevels: Record<string, ToolPermissionLevel>;
   }): string {
     switch (data.step) {
       case "welcome":
         return this.renderWelcomeView(data.logoUri);
       case "setup":
         return this.renderSetupView(data);
+      case "permissions":
+        return renderPermissionsScreenBody(data.permissionLevels);
       case "running":
       default:
         return this.renderRunningView(data);
@@ -1378,6 +1495,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
         mcpRunning
           ? `
         <div class="control-grid">
+          <button class="secondary" onclick="post('openPermissions')">Configure Permissions</button>
           <button class="secondary" onclick="post('openSettings')">Open Settings</button>
           <button class="secondary" onclick="post('goToStep', { step: 'setup' })">Configure Connection</button>
           <button class="secondary" onclick="post('restart')"><span class="btn-icon" aria-hidden="true">↻</span> Restart</button>
@@ -1386,6 +1504,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
       `
           : `
         <div class="control-row-three">
+          <button class="secondary" onclick="post('openPermissions')">Configure Permissions</button>
           <button class="secondary" onclick="post('openSettings')">Open Settings</button>
           <button class="secondary" onclick="post('goToStep', { step: 'setup' })">Configure Connection</button>
           <button class="secondary" onclick="post('start')">Start</button>
@@ -1396,6 +1515,7 @@ export class ConnectorPanel implements vscode.WebviewViewProvider {
   }
 
   dispose(): void {
+    this.permissionStoreSub?.dispose();
     this.panel?.dispose();
     this.panel = undefined;
   }

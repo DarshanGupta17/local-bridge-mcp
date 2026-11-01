@@ -2,7 +2,7 @@
   "name": "localbridge",
   "displayName": "LocalBridge",
   "description": "Local Bridge for VS Code: connect Claude, ChatGPT, and other MCP clients to your workspace with authenticated tools for files, git, terminal, tests, and diagnostics.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "Darshangupta",
   "license": "LICENSE",
   "homepage": "https://localbridge.widgetkraft.com",
@@ -81,6 +81,10 @@
       {
         "command": "localbridge.openSettings",
         "title": "LocalBridge: Open Settings"
+      },
+      {
+        "command": "localbridge.openPermissions",
+        "title": "LocalBridge: Configure Permissions"
       },
       {
         "command": "localbridge.start",

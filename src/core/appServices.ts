@@ -9,6 +9,7 @@ import { SecurityEngine } from "../security/securityEngine.js";
 import { WorkspaceManager } from "../security/workspaceManager.js";
 import { gitProviderForRoot } from "../git/gitContextProvider.js";
 import type { GitContextProvider } from "../git/gitContextProvider.js";
+import { ToolPermissionStore } from "../security/toolPermissions.js";
 
 export class AppServices {
   readonly auth: AuthenticationManager;
@@ -19,6 +20,7 @@ export class AppServices {
   git!: GitContextProvider;
   executionLimits!: ExecutionLimits;
   processes!: ProcessManager;
+  readonly toolPermissions: ToolPermissionStore;
 
   private constructor(
     readonly vscodeContext: vscode.ExtensionContext,
@@ -32,6 +34,7 @@ export class AppServices {
       contextEnabled,
       () => this.workspace?.roots.map((r) => r.path) ?? []
     );
+    this.toolPermissions = new ToolPermissionStore(vscodeContext);
   }
 
   static create(vscodeContext: vscode.ExtensionContext): AppServices {
